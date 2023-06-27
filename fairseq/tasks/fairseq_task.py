@@ -86,17 +86,20 @@ class FairseqTask(object):
         self.state = StatefulContainer()
 
     @classmethod
-    def load_dictionary(cls, filename):
+    def load_dictionary(cls, filename, extra_special_symbols=None):
         """Load the dictionary from the filename
 
         Args:
             filename (str): the filename
         """
+        # 1305/2023 ziqian
+        if extra_special_symbols: 
+            return Dictionary.load(filename, extra_special_symbols)
         return Dictionary.load(filename)
 
     @classmethod
     def build_dictionary(
-        cls, filenames, workers=1, threshold=-1, nwords=-1, padding_factor=8
+        cls, filenames, workers=1, threshold=-1, nwords=-1, padding_factor=8, extra_special_symbols=None
     ):
         """Build the dictionary
 
@@ -110,7 +113,8 @@ class FairseqTask(object):
                 multiple of 8, which is important on some hardware (e.g., Nvidia
                 Tensor Cores).
         """
-        d = Dictionary()
+        d = Dictionary(extra_special_symbols = extra_special_symbols) #1205 ziqian
+        # d = Dictionary()
         for filename in filenames:
             Dictionary.add_file_to_dictionary(
                 filename, d, tokenizer.tokenize_line, workers

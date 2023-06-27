@@ -83,6 +83,7 @@ def _build_dictionary(
     src=False,
     tgt=False,
 ):
+    #13/05/2023 ziqian 
     assert src ^ tgt
     return task.build_dictionary(
         filenames,
@@ -90,6 +91,7 @@ def _build_dictionary(
         threshold=args.thresholdsrc if src else args.thresholdtgt,
         nwords=args.nwordssrc if src else args.nwordstgt,
         padding_factor=args.padding_factor,
+        extra_special_symbols=extra_special_symbols,
     )
 
 
@@ -307,15 +309,21 @@ def main(args):
 
     task = tasks.get_task(args.task)
 
+    #13/05 ziqian
+    extra_special_symbols = None 
+    if args.extra_symbols:
+        extra_special_symbols = [s.strip() for s in args.extra_symbols.split() if s.strip() ]
+        print('extra_special_symbols:', extra_special_symbols)
+
     if args.joined_dictionary:
         assert (
             not args.srcdict or not args.tgtdict
         ), "cannot use both --srcdict and --tgtdict with --joined-dictionary"
 
         if args.srcdict:
-            src_dict = task.load_dictionary(args.srcdict)
+            src_dict = task.load_dictionary(args.srcdict, extra_special_symbols)
         elif args.tgtdict:
-            src_dict = task.load_dictionary(args.tgtdict)
+            src_dict = task.load_dictionary(args.tgtdict, extra_special_symbols)
         else:
             assert (
                 args.trainpref
@@ -328,11 +336,12 @@ def main(args):
                 task=task,
                 args=args,
                 src=True,
+                extra_special_symbols = extra_special_symbols,
             )
         tgt_dict = src_dict
     else:
         if args.srcdict:
-            src_dict = task.load_dictionary(args.srcdict)
+            src_dict = task.load_dictionary(args.srcdict, extra_special_symbols)
         else:
             assert (
                 args.trainpref
@@ -342,11 +351,12 @@ def main(args):
                 task=task,
                 args=args,
                 src=True,
+                extra_special_symbols = extra_special_symbols,
             )
 
         if target:
             if args.tgtdict:
-                tgt_dict = task.load_dictionary(args.tgtdict)
+                tgt_dict = task.load_dictionary(args.tgtdict, extra_special_symbols)
             else:
                 assert (
                     args.trainpref
@@ -356,6 +366,7 @@ def main(args):
                     task=task,
                     args=args,
                     tgt=True,
+                    extra_special_symbols = extra_special_symbols,
                 )
         else:
             tgt_dict = None

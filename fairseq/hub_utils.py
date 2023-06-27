@@ -144,6 +144,16 @@ class GeneratorHubInterface(nn.Module):
         batched_hypos = self.generate(tokenized_sentences, beam, verbose, **kwargs)
         return [self.decode(hypos[0]["tokens"]) for hypos in batched_hypos]
 
+    # 1106 ziqian
+    def translate_verbose(
+        self, sentences: List[str], beam: int = 5, verbose: bool = False, **kwargs
+    ) -> List[str]:
+        if isinstance(sentences, str):
+            sentences = [sentences]
+        tokenized_sentences = [self.encode(sentence) for sentence in sentences]
+        batched_hypos = self.generate(tokenized_sentences, beam, verbose, **kwargs)
+        return [self.decode(hypos[0]["tokens"]) for hypos in batched_hypos], batched_hypos
+
     def score(
         self, sentences: List[str], replace_newline_with_eos: bool = False, **kwargs
     ):

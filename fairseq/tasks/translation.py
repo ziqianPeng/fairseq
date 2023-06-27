@@ -263,6 +263,10 @@ class TranslationConfig(FairseqDataclass):
     eval_bleu_print_samples: bool = field(
         default=False, metadata={"help": "print sample generations during validation"}
     )
+    #1305 ziqian
+    extra_symbols: Optional[str] = field(
+        default=None, metadata={"help": "list of extra_special_symbols, separate by single space"}
+    )
 
 
 @register_task("translation", dataclass=TranslationConfig)
@@ -306,11 +310,17 @@ class TranslationTask(FairseqTask):
             )
 
         # load dictionaries
+        #1305 ziqian
+        extra_special_symbols = None
+        if cfg.extra_symbols:
+            extra_special_symbols = [s.strip() for s in cfg.extra_symbols.split() if s.strip() ]
+            print('fairseq.tasks.translation: extra_special_symbols=', extra_special_symbols)
+
         src_dict = cls.load_dictionary(
-            os.path.join(paths[0], "dict.{}.txt".format(cfg.source_lang))
+            os.path.join(paths[0], "dict.{}.txt".format(cfg.source_lang), extra_special_symbols)
         )
         tgt_dict = cls.load_dictionary(
-            os.path.join(paths[0], "dict.{}.txt".format(cfg.target_lang))
+            os.path.join(paths[0], "dict.{}.txt".format(cfg.target_lang), extra_special_symbols)
         )
         assert src_dict.pad() == tgt_dict.pad()
         assert src_dict.eos() == tgt_dict.eos()

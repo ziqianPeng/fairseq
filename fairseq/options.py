@@ -305,6 +305,9 @@ def add_preprocess_args(parser):
                        help="number of parallel workers")
     group.add_argument("--dict-only", action='store_true',
                        help="if true, only builds a dictionary and then exits")
+    #1305 ziqian
+    group.add_argument("--extra-symbols", default=None,
+                       help="list of extra special symbols")
     # fmt: on
     return parser
 
