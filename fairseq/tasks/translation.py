@@ -317,10 +317,10 @@ class TranslationTask(FairseqTask):
             print('fairseq.tasks.translation: extra_special_symbols=', extra_special_symbols)
 
         src_dict = cls.load_dictionary(
-            os.path.join(paths[0], "dict.{}.txt".format(cfg.source_lang), extra_special_symbols)
+            os.path.join(paths[0], "dict.{}.txt".format(cfg.source_lang)),  extra_special_symbols
         )
         tgt_dict = cls.load_dictionary(
-            os.path.join(paths[0], "dict.{}.txt".format(cfg.target_lang), extra_special_symbols)
+            os.path.join(paths[0], "dict.{}.txt".format(cfg.target_lang)), extra_special_symbols
         )
         assert src_dict.pad() == tgt_dict.pad()
         assert src_dict.eos() == tgt_dict.eos()

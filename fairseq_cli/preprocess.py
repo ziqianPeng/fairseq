@@ -82,6 +82,7 @@ def _build_dictionary(
     args,
     src=False,
     tgt=False,
+    extra_special_symbols = None,
 ):
     #13/05/2023 ziqian 
     assert src ^ tgt
