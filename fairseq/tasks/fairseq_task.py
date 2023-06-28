@@ -94,7 +94,8 @@ class FairseqTask(object):
         """
         # 1305/2023 ziqian
         if extra_special_symbols: 
-            return Dictionary.load(filename, extra_special_symbols)
+            return Dictionary.load(filename, extra_special_symbols = extra_special_symbols)
+            
         return Dictionary.load(filename)
 
     @classmethod

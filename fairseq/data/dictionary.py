@@ -40,6 +40,7 @@ class Dictionary:
             if extra_special_symbols:
                 for s in extra_special_symbols:
                     self.add_symbol(s)
+                self.extra_symbols = extra_special_symbols #ziqian
             self.nspecial = len(self.symbols)
 
     def __eq__(self, other):
@@ -108,6 +109,11 @@ class Dictionary:
 
         if hasattr(self, "bos_index"):
             extra_symbols_to_ignore.add(self.bos())
+
+        # ziqian TO TEST
+        # if hasattr(self, 'extra_symbols'):
+        #     for s in self.extra_symbols:
+        #         extra_symbols_to_ignore.add(s)
 
         sent = separator.join(
             token_string(i)
