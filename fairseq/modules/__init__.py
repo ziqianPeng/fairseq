@@ -31,6 +31,8 @@ from .linearized_convolution import LinearizedConvolution
 from .location_attention import LocationAttention
 from .lstm_cell_with_zoneout import LSTMCellWithZoneOut
 from .multihead_attention import MultiheadAttention
+from .multihead_attention_mask import MultiheadAttentionMask # ziqian
+from .multihead_attention_3d import MultiheadAttention3DMask # ziqian
 from .positional_embedding import PositionalEmbedding
 from .same_pad import SamePad, SamePad2d
 from .scalar_bias import ScalarBias
@@ -40,6 +42,7 @@ from .transformer_sentence_encoder import TransformerSentenceEncoder
 from .transpose_last import TransposeLast
 from .unfold import unfold1d
 from .transformer_layer import TransformerDecoderLayer, TransformerEncoderLayer
+from .transformer_mask_layer import MaskedTransformerDecoderLayer #ziqian
 from .vggblock import VGGBlock
 from .espnet_multihead_attention import (
     ESPNETMultiHeadedAttention,

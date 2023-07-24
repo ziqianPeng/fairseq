@@ -40,7 +40,7 @@ class Dictionary:
             if extra_special_symbols:
                 for s in extra_special_symbols:
                     self.add_symbol(s)
-                self.extra_symbols = extra_special_symbols #ziqian
+                self.extra_symbols = [4 + i for i in range(len(extra_special_symbols))] #ziqian
             self.nspecial = len(self.symbols)
 
     def __eq__(self, other):
@@ -109,11 +109,6 @@ class Dictionary:
 
         if hasattr(self, "bos_index"):
             extra_symbols_to_ignore.add(self.bos())
-
-        # ziqian TO TEST
-        # if hasattr(self, 'extra_symbols'):
-        #     for s in self.extra_symbols:
-        #         extra_symbols_to_ignore.add(s)
 
         sent = separator.join(
             token_string(i)
@@ -219,6 +214,9 @@ class Dictionary:
     def unk(self):
         """Helper to get index of unk symbol"""
         return self.unk_index
+
+    def get_extra_symbols(self):
+        return self.extra_symbols
 
     @classmethod
     def load(cls, f, add_special_symbols=True, extra_special_symbols = None):
