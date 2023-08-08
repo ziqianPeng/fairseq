@@ -190,7 +190,7 @@ class TranslationMaskConfig(TranslationConfig):
     # TODO ziqian register the choices of mask as constant (maybe in dataclass/constants.py)
     # change this as mandatory, put default as future/None in the translation_mask task
     source_mask: Optional[str] = field(
-        default='past', metadata={"help": "choose between past and future to mask past or future context"}
+        default='past', metadata={"help": "choose between past and future to mask past, future or all source context"}
     )
 
 

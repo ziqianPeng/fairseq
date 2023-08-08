@@ -107,7 +107,9 @@ class SequenceGeneratorDoc(SequenceGenerator):
         self.model.eval()
 
         # TODO set the id '4' with dictionary (with similar way as pad, unk etc.)
+        # also fix the -2 as padding index for <sep> index list somewhere
         self.sep = 4 
+        self.sep_pad_idx = -2
         
 
     def _generate(
@@ -208,6 +210,8 @@ class SequenceGeneratorDoc(SequenceGenerator):
         sep_indice_tgt = sep_indice_tgt.index_select(0, new_order).to(src_tokens.device)
         assert sep_indice_src.size()[0] == bsz * beam_size
         assert sep_indice_tgt.size()[0] == bsz * beam_size
+
+        update_context_mask = sep_indice_src.size(1) > 1
         ########
 
         # initialize buffers
@@ -292,7 +296,9 @@ class SequenceGeneratorDoc(SequenceGenerator):
                     self.temperature,
                     sep_idx_src = sep_indice_src,
                     sep_idx_tgt = sep_indice_tgt,
+                    update_context_mask = update_context_mask,
                 )
+            update_context_mask = False
 
             if self.lm_model is not None:
                 lm_out = self.lm_model(tokens[:, : step + 1])
@@ -441,6 +447,8 @@ class SequenceGeneratorDoc(SequenceGenerator):
                 # #### update source sep indice
                 # sep_indice_src = sep_indice_src.view(bsz, -1)[batch_idxs].view(new_bsz * beam_size, -1) 
                 sep_indice_tgt = sep_indice_tgt.view(bsz, -1)[batch_idxs].view(new_bsz * beam_size, -1) 
+                update_context_mask = True
+                # print('TEST update context mask (generated <eos>)')
                 # print('TEST.generate | update src &tgt sep indice', sep_indice_src.size() , sep_indice_tgt.size() )
                 if attn is not None:
                     attn = attn.view(bsz, -1)[batch_idxs].view(
@@ -514,11 +522,17 @@ class SequenceGeneratorDoc(SequenceGenerator):
                 # # Shape: 1d list of absolute-numbered
                 # sep_bbsz_idx = torch.masked_select(cand_bbsz_idx[:, :], mask=sep_mask[:, :])
                 # if sep_bbsz_idx.numel() > 0:
+                # step_sep_info = tokens[:, step + 1].eq(self.sep)
                 
                 if tokens[:, step + 1].eq(self.sep).sum() > 0:
                     # print('---------------------')
                     # print(f'TEST.generate | step | {step} |tokens:\n', tokens[:, : step + 2])
                     sep_indice_tgt = get_sep_info(tokens[:, : step + 2])
+                    update_context_mask = True
+                    # print('TEST update context mask (generated <sep>)')
+                    # tmp = step_sep_info*(step+1)
+                    # step_sep_idx = torch.where( tmp==0, self.sep_pad_idx, tmp)
+                    # sep_indice_tgt = torch.cat(( sep_indice_tgt, step_sep_idx.unsqueeze(1)), axis = 1)
                     # print('TEST.generate | sep:', sep_indice_tgt)
             #####
 
@@ -725,6 +739,7 @@ class EnsembleModelMask(EnsembleModel):
         temperature: float = 1.0,
         sep_idx_src: Tensor = None,
         sep_idx_tgt: Tensor = None,
+        update_context_mask: bool = True, 
     ):
         log_probs = []
         avg_attn: Optional[Tensor] = None
@@ -734,22 +749,25 @@ class EnsembleModelMask(EnsembleModel):
                 encoder_out = encoder_outs[i]
             # decode each model
             if self.has_incremental_states():
-                # print('TEST EnsembleModel | has_incremental_states')
+                
                 decoder_out = model.decoder.forward(
                     tokens,
                     encoder_out=encoder_out,
                     incremental_state=incremental_states[i],
                     sep_idx_src = sep_idx_src,
                     sep_idx_tgt = sep_idx_tgt,
+                    update_context_mask = update_context_mask,
                 )
             else:
                 # TODO ziqian make sure this works also for normal transformer
+                # update_context_mask is always True if not has_incremental_states
                 if hasattr(model, "decoder"):
                     decoder_out = model.decoder.forward(
                         tokens, 
                         encoder_out = encoder_out,
                         sep_idx_src = sep_idx_src,
                         sep_idx_tgt = sep_idx_tgt,
+                        update_context_mask = True,
                         )
                 else:
                     decoder_out = model.forward(tokens)

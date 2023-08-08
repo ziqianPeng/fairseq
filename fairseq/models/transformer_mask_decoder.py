@@ -14,6 +14,7 @@ from fairseq.models.transformer import (
     TransformerDecoder,
     base_architecture,
 )
+from fairseq.modules.checkpoint_activations import checkpoint_wrapper
 from fairseq.modules.transformer_mask_layer import MaskedTransformerDecoderLayer
 
 
@@ -70,6 +71,7 @@ class TransformerMaskDecoder(TransformerDecoder):
         return_all_hiddens: bool = False,
         sep_idx_src: Optional[Tensor] =None,
         sep_idx_tgt: Optional[Tensor] = None,
+        update_context_mask : Optional[bool] = True,
     ):
     # the same as TransformerDecoder(Base), rewrite to pass <sep> indices to decoder layer 
         x, extra = self.extract_features(
@@ -81,6 +83,7 @@ class TransformerMaskDecoder(TransformerDecoder):
             alignment_heads=alignment_heads,
             sep_idx_src = sep_idx_src,
             sep_idx_tgt = sep_idx_tgt,
+            update_context_mask = update_context_mask,
         )
 
         if not features_only:
@@ -97,6 +100,7 @@ class TransformerMaskDecoder(TransformerDecoder):
         alignment_heads: Optional[int] = None,
         sep_idx_src: Optional[Tensor] =None,
         sep_idx_tgt: Optional[Tensor] = None,
+        update_context_mask : Optional[bool] = True,
     ):
     # the same as TransformerDecoder(Base), rewrite to pass <sep> indices to decoder layer 
         return self.extract_features_scriptable(
@@ -108,6 +112,7 @@ class TransformerMaskDecoder(TransformerDecoder):
             alignment_heads,
             sep_idx_src = sep_idx_src,
             sep_idx_tgt = sep_idx_tgt,
+            update_context_mask = update_context_mask,
         )
 
     # also copy extract_features_scriptable, but only modifie the layer(...) part
@@ -123,6 +128,7 @@ class TransformerMaskDecoder(TransformerDecoder):
         alignment_heads: Optional[int] = None,
         sep_idx_src: Optional[Tensor] =None,
         sep_idx_tgt: Optional[Tensor] = None,
+        update_context_mask : Optional[bool] = True,
     ):
         """
         Similar to *forward* but only return features. read more information in TransformerDecoder
@@ -208,6 +214,7 @@ class TransformerMaskDecoder(TransformerDecoder):
                 sep_idx_src = sep_idx_src,
                 sep_idx_tgt = sep_idx_tgt,
                 mask_mode = self.mask_mode,
+                update_context_mask = update_context_mask,
             )
             inner_states.append(x)
             if layer_attn is not None and idx == alignment_layer:

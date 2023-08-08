@@ -12,20 +12,8 @@ from typing import Dict, List, Optional, Tuple
 import torch
 import torch.nn.functional as F
 from torch import Tensor, nn
-from torch.nn import Parameter
-
-try:
-    from xformers.components.attention import build_attention
-    from xformers.components.attention.utils import maybe_merge_masks
-
-    _xformers_available = True
-except ImportError:
-    _xformers_available = False
 
 from fairseq import utils
-from fairseq.modules.fairseq_dropout import FairseqDropout
-from fairseq.modules.quant_noise import quant_noise
-from fairseq.models.fairseq_incremental_decoder import FairseqIncrementalDecoder
 
 from fairseq.modules.multihead_attention import MultiheadAttention
 
@@ -48,6 +36,7 @@ class MultiheadAttention3DMask(MultiheadAttention):
         attn_mask: Optional[Tensor] = None,
         before_softmax: bool = False,
         need_head_weights: bool = False,
+        save_context: bool = False,
     ) -> Tuple[Tensor, Optional[Tensor]]:
         """Input shape: Time x Batch x Channel
 
@@ -239,6 +228,8 @@ class MultiheadAttention3DMask(MultiheadAttention):
                 kv_bsz, self.num_heads, -1, self.head_dim
             )
             saved_state["prev_key_padding_mask"] = key_padding_mask
+            if save_context and attn_mask is not None:
+                saved_state["attn_mask"] = attn_mask
             # In this branch incremental_state is never None
             assert incremental_state is not None
             incremental_state = self._set_input_buffer(incremental_state, saved_state)
@@ -281,7 +272,7 @@ class MultiheadAttention3DMask(MultiheadAttention):
                 if self.onnx_trace:
                     attn_mask = attn_mask.repeat(attn_weights.size(0), 1, 1)
             elif attn_mask.dim() == 3:
-                assert attn_mask.size() == attn_weights.size()
+                assert attn_mask.size() == attn_weights.size(), f'{attn_mask.size()} != {attn_weights.size()}'
             else:
                 raise RuntimeError(f"attn_mask's dimension {attn_mask.dim()} is not supported")
             attn_weights += attn_mask

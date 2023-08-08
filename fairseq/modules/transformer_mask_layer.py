@@ -13,131 +13,8 @@ from torch import Tensor
 from typing import List, Optional, Dict 
 
 from fairseq.modules.multihead_attention_3d import MultiheadAttention3DMask
+from fairseq.modules.batch_mask import BatchMaskFuture, BatchMaskPast, BatchMaskAllSource
 
-
-class BatchMask(object):
-    """
-    size of attention mask : (bsz * num_heads, tgt_len, src_len) or (tgt_len, src_len)
-    """
-    def __init__(
-        self, 
-        sep_idx_src, 
-        sep_idx_tgt,
-        src_len,
-        tgt_len,
-        pad_idx_sep = -2,
-        pad_left_src: Tensor = None,
-        pad_left_tgt: Tensor = None,
-        num_heads : int = 8,
-        mask_mode : str = 'past',
-        has_incremental_state : bool = False, 
-        ):
-        # assert mask_mode in ['past', 'future' 'mix'], mask_mode
-        self.sep_idx_src = sep_idx_src
-        self.sep_idx_tgt = sep_idx_tgt
-        assert len(self.sep_idx_src) == len(self.sep_idx_tgt), f"for src: {sep_idx_src}, for tgt: {sep_idx_tgt}"
-        # attention matrix (segment) of shape T_tgt x T_src 
-        self.src_len = src_len
-        self.tgt_len = tgt_len
-        # for padding of sep indices
-        self.pad_idx_sep = pad_idx_sep
-        self.pad_left_src = pad_left_src
-        self.pad_left_tgt = pad_left_tgt
-        # attention matrix (batch) of shape N*nhead x T_tgt x T_src 
-        self.num_heads = num_heads
-        self.mask_mode = mask_mode
-        self.has_incremental_state = has_incremental_state
-    
-    def _make_source_mask_seg_incremental(self, idx):
-        # for a single document
-        mask = torch.zeros(self.tgt_len, self.src_len, dtype = torch.bool)
-        # remove padding for self.sep_idx_tgt[idx] and self.sep_idx_src[idx] 
-        sep_tgt = self.sep_idx_tgt[idx][ self.sep_idx_tgt[idx].ne(self.pad_idx_sep) ] 
-        sep_src = self.sep_idx_src[idx][ self.sep_idx_src[idx].ne(self.pad_idx_sep) ] 
-        leftpad_src = 0 if self.pad_left_src is None else self.pad_left_src[idx]
-
-        # in case of incremental state
-        assert self.tgt_len == 1    
-        if self.mask_mode == 'past':
-            # +1 to mask <sep>, mask nothing if sep_tgt = [0]
-            if len(sep_tgt) > 1:
-                mask_idx = leftpad_src + sep_src[min( len(sep_tgt), len(sep_src) )-1] 
-
-                # mask[:, : mask_idx + 1] = torch.tensor(True) 
-                mask[:, : mask_idx ] = torch.tensor(True) 
-        elif self.mask_mode == 'future':
-            if len(sep_tgt) < len(sep_src):
-                # mask_idx = leftpad_src + sep_src[min( len(sep_tgt), len(sep_src) )-1] 
-                # if don't mask current src <sep>
-                mask_idx = leftpad_src + sep_src[len(sep_tgt)-1] +1 
-
-                mask[ :, mask_idx : ] = torch.tensor(True)
-        else:
-            raise NotImplementedError
-
-        return mask.repeat( self.num_heads, 1, 1)
-
-    
-    def _make_source_mask_seg(self, idx):
-        # for a single document
-        mask = torch.zeros(self.tgt_len, self.src_len, dtype = torch.bool)
-        # remove padding for self.sep_idx_tgt[idx] and self.sep_idx_src[idx] 
-        sep_tgt = self.sep_idx_tgt[idx][ self.sep_idx_tgt[idx].ne(self.pad_idx_sep) ] 
-        sep_src = self.sep_idx_src[idx][ self.sep_idx_src[idx].ne(self.pad_idx_sep) ] 
-        # assert len(sep_tgt) == len(sep_src) # False during generation
-        leftpad_src = 0 if self.pad_left_src is None else self.pad_left_src[idx]
-        leftpad_tgt = 0 if self.pad_left_tgt is None else self.pad_left_tgt[idx]
-
-        for i in range(len(sep_tgt)-1 ):
-            if self.mask_mode == 'past':
-                begin_tgt = leftpad_tgt + sep_tgt[i+1] 
-                if i+1 >= len(sep_src):
-                    begin_src = leftpad_src + sep_src[0]
-                    mask[begin_tgt:, begin_src : ] = torch.tensor(True)
-                else:
-                    begin_src = leftpad_src + sep_src[i] 
-
-                    # end_src = leftpad_src + sep_src[i+1] +1 # +1 to mask also <sep> in previous src sent
-                    end_src = leftpad_src + sep_src[i+1] 
-                    mask[begin_tgt:, begin_src : end_src] = torch.tensor(True)
-
-            elif self.mask_mode == 'future':
-                # if i+1 >= len(sep_src), no future token to mask, all tokens are at past
-                if i+1 < len(sep_src):
-                    begin_tgt = leftpad_tgt + sep_tgt[i]
-                    end_tgt = leftpad_tgt + sep_tgt[i+1] +1 # +1 to update mask also for tgt <sep>
-                    
-                    # begin_src = leftpad_src + sep_src[i+1]  # if mask <sep> of current src sentence:
-                    begin_src = leftpad_src + sep_src[i+1] +1 
-
-                    mask[begin_tgt: end_tgt, begin_src : ] = torch.tensor(True)
-
-            else:
-                raise NotImplementedError
-
-        # if self.src_len < 50 and self.sep_idx_tgt.size(1) > 1 and idx < 4:
-        #     print(f'TEST idx {idx}, src_len { self.src_len} tgt_len {self.tgt_len}')
-        #     print(f'TEST src_leftpad { leftpad_src} tgt_leftpad {leftpad_tgt}')
-        #     print('TEST sep_idx_src', self.sep_idx_src)
-        #     print('TEST sep_idx_tgt', self.sep_idx_tgt)
-        #     print('TEST context mask')
-        #     for i in range(len(mask)):
-        #         print(i, mask[i])
-
-        return mask.repeat( self.num_heads, 1, 1)
-        # TODO expand or repeat??  # expand may better for memory complexity, 
-        # but fairseq used `repeat` in MultiHeadAttn.forward for attn_mask
-        # if using tensor.expand, avoid direct in place operation with it (make a copy)
-        # return mask.unsqueeze(0).expand( self.num_heads, -1, -1)
-        
-    def make_source_mask(self):
-        # for a batch, use map
-        if self.has_incremental_state:
-            batch_mask = list(map(self._make_source_mask_seg_incremental, range(len(self.sep_idx_tgt))))
-        else:
-            batch_mask = list(map(self._make_source_mask_seg, range(len(self.sep_idx_tgt))))
-
-        return torch.cat(batch_mask).to(self.sep_idx_tgt.device)
 
 
 class MaskedTransformerDecoderLayer(TransformerDecoderLayer):
@@ -149,9 +26,6 @@ class MaskedTransformerDecoderLayer(TransformerDecoderLayer):
     def __init__(
         self,
         args,
-        layer_idx,
-        self_attn_head_selector=None,
-        enc_attn_head_selector=None,
         no_encoder_attn=False,
         add_bias_kv=False,
         add_zero_attn=False,
@@ -171,6 +45,17 @@ class MaskedTransformerDecoderLayer(TransformerDecoderLayer):
             qn_block_size=self.quant_noise_block_size,
             xformers_att_config=cfg.encoder.xformers_att_config,
         )
+    
+    def set_batch_mask(self, mask_mode):
+        # todo maybe move this method to translation_mask.py or outside of DecoderLayer??
+        if mask_mode == 'future':
+            return BatchMaskFuture
+        elif mask_mode == 'past':
+            return BatchMaskPast
+        elif mask_mode == 'all':
+            return BatchMaskAllSource
+        else:
+            raise NotImplementedError
 
 
     # copied from transformer_layer.forward, pass <sep> indice and pad_left_src/tgt by argument
@@ -190,6 +75,7 @@ class MaskedTransformerDecoderLayer(TransformerDecoderLayer):
         sep_idx_src: Optional[Tensor] = None,
         sep_idx_tgt: Optional[Tensor] = None,
         mask_mode: str = 'past',
+        update_context_mask: bool = True,
     ):
         """
         Args:
@@ -270,6 +156,47 @@ class MaskedTransformerDecoderLayer(TransformerDecoderLayer):
             residual = x
             if self.normalize_before:
                 x = self.encoder_attn_layer_norm(x)
+
+            ##### make batch past / future mask                
+            context_mask: Tensor = None
+            if sep_idx_src.size(1) > 1:
+            # if there is a document with more than 1 sentence in the  batch
+                if update_context_mask:
+                    # 1. number of padding at left:
+                    pad_left_src: Tensor= None
+                    pad_left_tgt: Tensor = None
+                    # B X T
+                    if encoder_padding_mask is not None and encoder_padding_mask[:, 0].any():
+                        pad_left_src = encoder_padding_mask.sum(axis = 1)
+
+                    if self_attn_padding_mask is not None and self_attn_padding_mask[:, 0].any():
+                        pad_left_tgt = self_attn_padding_mask.sum(axis = 1)
+
+                    # 2. make mask
+                    # should be N*num_head, T_tgt, T_src
+                    batch_mask = self.set_batch_mask(mask_mode)
+                    context_mask = batch_mask(
+                        sep_idx_src, 
+                        sep_idx_tgt,
+                        src_len = encoder_padding_mask.size(1),
+                        tgt_len = x.size(0),
+                        pad_idx_sep = -2,
+                        pad_left_src = pad_left_src ,
+                        pad_left_tgt = pad_left_tgt,
+                        num_heads = self.nh,
+                        has_incremental_state = incremental_state is not None,
+                        ).make_source_mask().to(encoder_padding_mask.device)
+                    
+                else:
+                    assert incremental_state is not None
+                    _encoder_attn_input_buffer= self.encoder_attn._get_input_buffer(incremental_state)
+                    assert 'attn_mask' in _encoder_attn_input_buffer
+                    context_mask = _encoder_attn_input_buffer['attn_mask']
+
+                    # print('TEST get context mask from buffer', context_mask.size())
+                    
+            ### 3. if incremental_state, we should also store context mask in saved_state
+            # context mask will also be stored in MHA.forward()
             if prev_attn_state is not None:
                 prev_key, prev_value = prev_attn_state[:2]
                 saved_state: Dict[str, Optional[Tensor]] = {
@@ -278,37 +205,12 @@ class MaskedTransformerDecoderLayer(TransformerDecoderLayer):
                 }
                 if len(prev_attn_state) >= 3:
                     saved_state["prev_key_padding_mask"] = prev_attn_state[2]
+                # store context mask
+                if sep_idx_src.size(1) > 1 and update_context_mask:
+                    saved_state["attn_mask"] = context_mask
                 assert incremental_state is not None
                 self.encoder_attn._set_input_buffer(incremental_state, saved_state)
 
-            ##### make batch past / future mask
-            # 1. number of padding at left:
-            pad_left_src: Tensor= None
-            pad_left_tgt: Tensor = None
-            # B X T
-            if encoder_padding_mask is not None and encoder_padding_mask[:, 0].any():
-                pad_left_src = encoder_padding_mask.sum(axis = 1)
-
-            if self_attn_padding_mask is not None and self_attn_padding_mask[:, 0].any():
-                pad_left_tgt = self_attn_padding_mask.sum(axis = 1)
-                
-            # 2. make mask
-            # should be N*num_head, T_tgt, T_src
-            context_mask: Tensor = None
-            if sep_idx_src.size(1) > 1:
-                # if there is more than 1 sentence in the document 
-                context_mask = BatchMask(
-                    sep_idx_src, 
-                    sep_idx_tgt,
-                    src_len = encoder_padding_mask.size(1),
-                    tgt_len = x.size(0),
-                    pad_idx_sep = -2,
-                    pad_left_src = pad_left_src ,
-                    pad_left_tgt = pad_left_tgt,
-                    num_heads = self.nh,
-                    mask_mode = mask_mode,
-                    has_incremental_state = incremental_state is not None,
-                    ).make_source_mask().to(encoder_padding_mask.device)
             
             ##### pass mask to encoder_attn 
             x, attn = self.encoder_attn(
@@ -321,6 +223,7 @@ class MaskedTransformerDecoderLayer(TransformerDecoderLayer):
                 need_weights=need_attn or (not self.training and self.need_attn),
                 need_head_weights=need_head_weights,
                 attn_mask = context_mask,
+                save_context = True,
             )
             x = self.dropout_module(x)
             x = self.residual_connection(x, residual)

@@ -43,6 +43,11 @@ from .transpose_last import TransposeLast
 from .unfold import unfold1d
 from .transformer_layer import TransformerDecoderLayer, TransformerEncoderLayer
 from .transformer_mask_layer import MaskedTransformerDecoderLayer #ziqian
+from .batch_mask import (
+    BatchMaskFuture,
+    BatchMaskPast,
+    BatchMaskAllSource,
+)
 from .vggblock import VGGBlock
 from .espnet_multihead_attention import (
     ESPNETMultiHeadedAttention,
@@ -106,4 +111,9 @@ __all__ = [
     "RelPositionalEncoding",
     "RotaryPositionalEmbedding",
     "RotaryPositionMultiHeadedAttention",
+    "MultiheadAttention3DMask",
+    "MaskedTransformerDecoderLayer",
+    "BatchMaskFuture",
+    "BatchMaskPast",
+    "BatchMaskAllSource",
 ]
