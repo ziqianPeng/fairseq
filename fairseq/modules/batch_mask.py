@@ -67,7 +67,10 @@ class BatchMask(object):
         else:
             batch_mask = list(map(self._make_source_mask_seg, range(len(self.sep_idx_tgt))))
 
-        return torch.cat(batch_mask).to(self.sep_idx_tgt.device)
+        bool_mask = torch.cat(batch_mask).to(self.sep_idx_tgt.device)
+        context_mask = torch.zeros_like(bool_mask, dtype=float).masked_fill_(bool_mask, float("-inf"))
+                              
+        return context_mask
     
     def test_verbose(self, idx, mask, leftpad_src, leftpad_tgt = None):
         if self.src_len < 30 and self.sep_idx_tgt.size(1) > 1 and idx < 4:
@@ -214,7 +217,7 @@ class BatchMaskFuture(BatchMask):
             mask_idx = leftpad_src + sep_src[ len(sep_tgt)] 
             # if don't mask current src <sep>
             # mask_idx = leftpad_src + sep_src[len(sep_tgt)-1] +1 
-            mask[ :, mask_idx : ] = torch.tensor(True)
+            mask[ :, mask_idx :  ] = torch.tensor(True)
 
         # to remove
         # self.test_verbose( idx, mask, leftpad_src)
@@ -233,7 +236,7 @@ class BatchMaskFuture(BatchMask):
 
         if len(sep_tgt) == 1 and len(sep_src) > 1:
             # during inference, when generating the first sentence
-            mask[leftpad_tgt: , leftpad_src + sep_src[1] : ] = torch.tensor(True)
+            mask[leftpad_tgt: , leftpad_src + sep_src[1]  :  ] = torch.tensor(True)
 
         for i in range(len(sep_tgt)-1 ):
             # if i+1 >= len(sep_src), no future token to mask, all tokens are at past
@@ -243,7 +246,7 @@ class BatchMaskFuture(BatchMask):
                 
                 begin_src = leftpad_src + sep_src[i+1]  # if mask <sep> of current src sentence:
                 # begin_src = leftpad_src + sep_src[i+1] +1 
-                mask[begin_tgt: end_tgt, begin_src : ] = torch.tensor(True)
+                mask[begin_tgt: end_tgt, begin_src :  ] = torch.tensor(True)
         
         # to remove
         # self.test_verbose(idx, mask, leftpad_src, leftpad_tgt)

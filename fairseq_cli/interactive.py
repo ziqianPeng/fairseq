@@ -36,6 +36,7 @@ logger = logging.getLogger("fairseq_cli.interactive")
 
 
 Batch = namedtuple("Batch", "ids src_tokens src_lengths constraints")
+BatchWithSepID=namedtuple("BatchWithSepID", "ids src_tokens src_lengths constraints sep_idx_src sep_idx_tgt")
 Translation = namedtuple("Translation", "src_str hypos pos_scores alignments")
 
 
@@ -96,12 +97,17 @@ def make_batches(lines, cfg, task, max_positions, encode_fn):
         src_tokens = batch["net_input"]["src_tokens"]
         src_lengths = batch["net_input"]["src_lengths"]
         constraints = batch.get("constraints", None)
-
-        yield Batch(
+        sep_idx_src = batch["net_input"].get("sep_idx_src", None)
+        sep_idx_tgt = batch["net_input"].get("sep_idx_tgt", None)
+        
+        # if sep_idx_src is None:
+        yield BatchWithSepID(
             ids=ids,
             src_tokens=src_tokens,
             src_lengths=src_lengths,
             constraints=constraints,
+            sep_idx_src=sep_idx_src,
+            sep_idx_tgt=sep_idx_tgt,
         )
 
 
@@ -211,11 +217,18 @@ def main(cfg: FairseqConfig):
             src_tokens = batch.src_tokens
             src_lengths = batch.src_lengths
             constraints = batch.constraints
+            sep_idx_src = batch.sep_idx_src
+            sep_idx_tgt = batch.sep_idx_tgt
+            
             if use_cuda:
                 src_tokens = src_tokens.cuda()
                 src_lengths = src_lengths.cuda()
                 if constraints is not None:
                     constraints = constraints.cuda()
+                if sep_idx_src is not None:
+                    sep_idx_src = sep_idx_src.cuda()
+                if sep_idx_tgt is not None:
+                    sep_idx_tgt = sep_idx_tgt.cuda()
 
             sample = {
                 "net_input": {
@@ -223,6 +236,11 @@ def main(cfg: FairseqConfig):
                     "src_lengths": src_lengths,
                 },
             }
+            if sep_idx_src is not None:
+                # print('fairseq.interative TEST | has sep_idx')
+                sample["net_input"]["sep_idx_src"] = sep_idx_src
+                sample["net_input"]["sep_idx_tgt"] = sep_idx_tgt
+
             translate_start_time = time.time()
             translations = task.inference_step(
                 generator, models, sample, constraints=constraints

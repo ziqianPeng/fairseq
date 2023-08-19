@@ -15,7 +15,6 @@ from typing import Optional
 from argparse import Namespace
 from omegaconf import II
 
-import numpy as np
 from fairseq import utils
 from fairseq.logging import metrics
 from fairseq.data import (
@@ -30,12 +29,12 @@ from fairseq.data import (
     encoders,
     indexed_dataset,
 )
-from fairseq.data.indexed_dataset import get_available_dataset_impl
+
 from fairseq.dataclass import ChoiceEnum, FairseqDataclass
-from fairseq.tasks import FairseqTask, register_task
+from fairseq.tasks import register_task
 # lev
 import torch
-from fairseq import utils
+from fairseq import tokenizer, utils
 # from fairseq.dataclass import ChoiceEnum
 from fairseq.tasks.translation import (
     TranslationConfig,
@@ -190,7 +189,20 @@ class TranslationMaskConfig(TranslationConfig):
     # TODO ziqian register the choices of mask as constant (maybe in dataclass/constants.py)
     # change this as mandatory, put default as future/None in the translation_mask task
     source_mask: Optional[str] = field(
-        default='past', metadata={"help": "choose between past and future to mask past, future or all source context"}
+        default=None, metadata={
+            "help": "choose between past and future to mask past, future or all source context. Choose transformer_mask as architecture."}
+    )
+    factor_mode: Optional[str] = field(
+        default=None, metadata={
+            "help": "choose between past, future, all to apply attention factor on source context. Choose transformer_factor as architecture."}
+    )
+    factor_base: Optional[float] = field(
+        default=0.9, metadata={
+            "help": "a float between 0 and 1, used with the architecture transformer_factor."}
+    )
+    min_len_ratio: Optional[float] = field(
+        default=None, metadata={
+            "help": "min_len = min_len_ratio * src_len."}
     )
 
 

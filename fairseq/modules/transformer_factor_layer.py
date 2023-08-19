@@ -1,5 +1,5 @@
-# adapted from fairseq/examples/attention_head_selection
-# attention matrix = softmax(QK + context_mask), where context_mask is filled with -inf
+# adapted from transformer_mask_layer.py
+# to add attention factor at sentence level
 
 # Copyright (c) Facebook, Inc. and its affiliates.
 #
@@ -12,13 +12,13 @@ import torch
 from torch import Tensor
 from typing import List, Optional, Dict 
 
-from fairseq.modules.multihead_attention_3d import MultiheadAttention3DMask
-# from fairseq.modules.batch_mask import BatchMaskFuture, BatchMaskPast, BatchMaskAllSource
+from fairseq.modules.multihead_attention_factor import MultiheadAttention3DFactor
 
 
 
-class MaskedTransformerDecoderLayer(TransformerDecoderLayer):
+class FadedTransformerDecoderLayer(TransformerDecoderLayer):
     """
+    apply attention factor to source context (cross-attention)
     if need to change MHA type, maybe add an argument attn_type in ['enc_mask', 'mask_enc']
     then choose MHA class in build_encoder_attention wrt attn_type
     """
@@ -34,7 +34,7 @@ class MaskedTransformerDecoderLayer(TransformerDecoderLayer):
     
 
     def build_encoder_attention(self, embed_dim, cfg):
-        return MultiheadAttention3DMask(
+        return MultiheadAttention3DFactor(
             embed_dim,
             cfg.decoder.attention_heads,
             kdim=cfg.encoder.embed_dim,
@@ -60,9 +60,9 @@ class MaskedTransformerDecoderLayer(TransformerDecoderLayer):
         self_attn_padding_mask: Optional[Tensor] = None,
         need_attn: bool = False,
         need_head_weights: bool = False,
-        context_mask: Optional[Tensor] = None,
+        context_factor: Optional[Tensor] = None,
         save_context: bool = True,
-        incremental_context_mask : bool = False
+        incremental_context_factor : bool = False
     ):
         """
         Args:
@@ -144,11 +144,12 @@ class MaskedTransformerDecoderLayer(TransformerDecoderLayer):
             if self.normalize_before:
                 x = self.encoder_attn_layer_norm(x)
             
-            if incremental_context_mask:
+            if incremental_context_factor:
+                # here update_context is False, save_context is False
                 assert incremental_state is not None
                 _encoder_attn_input_buffer= self.encoder_attn._get_input_buffer(incremental_state)
-                assert 'attn_mask' in _encoder_attn_input_buffer
-                context_mask = _encoder_attn_input_buffer['attn_mask']
+                assert 'attn_factor' in _encoder_attn_input_buffer
+                context_factor = _encoder_attn_input_buffer['attn_factor']
                 
             ### if incremental_state, we should also store context mask in saved_state
             # context mask will also be stored in MHA.forward()
@@ -162,7 +163,7 @@ class MaskedTransformerDecoderLayer(TransformerDecoderLayer):
                     saved_state["prev_key_padding_mask"] = prev_attn_state[2]
                 # store context mask
                 if save_context:
-                    saved_state["attn_mask"] = context_mask
+                    saved_state["attn_factor"] = context_factor
                 assert incremental_state is not None
                 self.encoder_attn._set_input_buffer(incremental_state, saved_state)
             
@@ -176,8 +177,8 @@ class MaskedTransformerDecoderLayer(TransformerDecoderLayer):
                 static_kv=True,
                 need_weights=need_attn or (not self.training and self.need_attn),
                 need_head_weights=need_head_weights,
-                attn_mask = context_mask,
                 save_context = True,
+                context_factor = context_factor,
             )
             x = self.dropout_module(x)
             x = self.residual_connection(x, residual)
@@ -213,6 +214,3 @@ class MaskedTransformerDecoderLayer(TransformerDecoderLayer):
             return x, attn, self_attn_state
         return x, attn, None
         
-
-
-    

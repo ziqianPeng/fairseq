@@ -1,4 +1,4 @@
-# adapted from examples/attention_head_selection
+# adapted from transformer_mask_decoder.py
 
 # Copyright (c) Facebook, Inc. and its affiliates.
 #
@@ -10,16 +10,18 @@ from torch import Tensor
 from fairseq.distributed import fsdp_wrap
 from fairseq.models import register_model, register_model_architecture
 from fairseq.models.transformer import (
-    TransformerModel,
     TransformerDecoder,
-    base_architecture,
 )
 from fairseq.modules.checkpoint_activations import checkpoint_wrapper
-from fairseq.modules.transformer_mask_layer import MaskedTransformerDecoderLayer
-from fairseq.modules.batch_mask import BatchMaskFuture, BatchMaskPast, BatchMaskAllSource
+from fairseq.modules.transformer_factor_layer import FadedTransformerDecoderLayer
+from fairseq.modules.batch_attention_factor import (
+    BatchAttnFactorSentAll,
+    BatchAttnFactorSentFuture,
+    BatchAttnFactorSentPast,
+)
 
 
-class TransformerMaskDecoder(TransformerDecoder):
+class TransformerFactorDecoder(TransformerDecoder):
     """
     the main modifiations (from TransformerDecoder) are:
     - build_decoder_layer: to apply TransformerMaskDecoderLayerBase
@@ -42,12 +44,14 @@ class TransformerMaskDecoder(TransformerDecoder):
             output_projection=output_projection
         )
         print('TEST padding_idx decoder: ', self.padding_idx)
-        self.mask_mode = args.source_mask
+        self.factor_mode = args.factor_mode
+        self.factor_base = args.factor_base
+        assert self.factor_base > 0 and self.factor_base < 1, "invalid value for attention factor"
 
 
     def build_decoder_layer(self, cfg, no_encoder_attn=False):
-        # replace TransformerDecoderLayerBase by MaskedTransformerDecoderLayer
-        layer = MaskedTransformerDecoderLayer(cfg, no_encoder_attn)
+        # replace TransformerDecoderLayerBase by FadedTransformerDecoderLayer
+        layer = FadedTransformerDecoderLayer(cfg, no_encoder_attn)
         checkpoint = cfg.checkpoint_activations
         if checkpoint:
             offload_to_cpu = cfg.offload_activations
@@ -58,14 +62,13 @@ class TransformerMaskDecoder(TransformerDecoder):
         layer = fsdp_wrap(layer, min_num_params=min_params_to_wrap)
         return layer
         
-    def set_batch_mask(self):
-        # todo maybe move this method to translation_mask.py or outside of DecoderLayer??
-        if self.mask_mode == 'future':
-            return BatchMaskFuture
-        elif self.mask_mode == 'past':
-            return BatchMaskPast
-        elif self.mask_mode == 'all':
-            return BatchMaskAllSource
+    def set_batch_factor(self):
+        if self.factor_mode == 'future':
+            return BatchAttnFactorSentFuture
+        elif self.factor_mode == 'past':
+            return BatchAttnFactorSentPast
+        elif self.factor_mode == 'all':
+            return BatchAttnFactorSentAll
         else:
             raise NotImplementedError
 
@@ -82,9 +85,9 @@ class TransformerMaskDecoder(TransformerDecoder):
         return_all_hiddens: bool = False,
         sep_idx_src: Optional[Tensor] =None,
         sep_idx_tgt: Optional[Tensor] = None,
-        update_context : Optional[bool] = True,
+        update_context: Optional[bool] = True,
     ):
-    # the same as TransformerDecoder(Base), rewrite to pass <sep> indices to decoder layer 
+    # the same as TransformerMaskDecoder(Base)
         x, extra = self.extract_features(
             prev_output_tokens,
             encoder_out=encoder_out,
@@ -205,9 +208,9 @@ class TransformerMaskDecoder(TransformerDecoder):
             self_attn_padding_mask = prev_output_tokens.eq(self.padding_idx)
 
         ##### make batch past / future mask                
-        context_mask: Tensor = None
+        context_factor: Tensor = None
         if sep_idx_src.size(1) > 1:
-        # if there is a document with more than 1 sentence in the batch
+        # if there is a document with more than 1 sentence in the  batch
             if update_context:
                 # 1. number of padding at left:
                 pad_left_src: Tensor= None
@@ -219,10 +222,10 @@ class TransformerMaskDecoder(TransformerDecoder):
                 if self_attn_padding_mask is not None and self_attn_padding_mask[:, 0].any():
                     pad_left_tgt = self_attn_padding_mask.sum(axis = 1)
 
-                # 2. make mask
+                # 2. make factor matrice
                 # should be N*num_head, T_tgt, T_src
-                batch_mask = self.set_batch_mask()
-                context_mask = batch_mask(
+                batch_factor = self.set_batch_factor()
+                context_factor = batch_factor(
                     sep_idx_src, 
                     sep_idx_tgt,
                     src_len = padding_mask.size(1),
@@ -231,8 +234,9 @@ class TransformerMaskDecoder(TransformerDecoder):
                     pad_left_src = pad_left_src ,
                     pad_left_tgt = pad_left_tgt,
                     num_heads = self.cfg.decoder.attention_heads,
+                    factor_base = self.factor_base,
                     has_incremental_state = incremental_state is not None,
-                    ).make_source_mask().to(padding_mask.device, dtype = x.dtype)
+                    ).get_attn_factor().to(padding_mask.device, dtype = x.dtype)
 
         # decoder layers
         attn: Optional[Tensor] = None
@@ -253,9 +257,9 @@ class TransformerMaskDecoder(TransformerDecoder):
                 self_attn_padding_mask=self_attn_padding_mask,
                 need_attn=bool((idx == alignment_layer)),
                 need_head_weights=bool((idx == alignment_layer)),
-                context_mask = context_mask,
+                context_factor = context_factor,
                 save_context = sep_idx_src.size(1) > 1 and update_context,
-                incremental_context_mask = sep_idx_src.size(1) > 1 and not update_context,
+                incremental_context_factor = sep_idx_src.size(1) > 1 and not update_context,
             )
             inner_states.append(x)
             if layer_attn is not None and idx == alignment_layer:

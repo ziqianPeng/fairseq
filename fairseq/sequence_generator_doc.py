@@ -182,10 +182,10 @@ class SequenceGeneratorDoc(SequenceGenerator):
                 int(self.max_len_a * src_len + self.max_len_b),
                 self.max_len - 1,
             )
+
         assert (
             self.min_len <= max_len
         ), "min_len cannot be larger than max_len, please adjust these!"
-        # print('TEST.generator | max_len', max_len)
 
         # compute the encoder output for each beam
         with torch.autograd.profiler.record_function("EnsembleModelMask: forward_encoder"):
@@ -211,7 +211,7 @@ class SequenceGeneratorDoc(SequenceGenerator):
         assert sep_indice_src.size()[0] == bsz * beam_size
         assert sep_indice_tgt.size()[0] == bsz * beam_size
 
-        update_context_mask = sep_indice_src.size(1) > 1
+        update_context = sep_indice_src.size(1) > 1
         ########
 
         # initialize buffers
@@ -296,9 +296,9 @@ class SequenceGeneratorDoc(SequenceGenerator):
                     self.temperature,
                     sep_idx_src = sep_indice_src,
                     sep_idx_tgt = sep_indice_tgt,
-                    update_context_mask = update_context_mask,
+                    update_context = update_context,
                 )
-            update_context_mask = False
+            update_context = False
 
             if self.lm_model is not None:
                 lm_out = self.lm_model(tokens[:, : step + 1])
@@ -329,8 +329,13 @@ class SequenceGeneratorDoc(SequenceGenerator):
                     step, lprobs, scores, tokens, prefix_tokens, beam_size
                 )
             else:
+                
                 if step < self.min_len:
                     # minimum length constraint (does not apply if using prefix_tokens)
+                    lprobs[:, self.eos] = -math.inf
+
+                # TEST ziqian if none of target sentence has generated the same sep as that in src
+                if sep_indice_tgt.size(1) < sep_indice_src.size(1) and step < max_len:
                     lprobs[:, self.eos] = -math.inf
 
                 if self.token_indices_to_suppress is not None:
@@ -447,7 +452,7 @@ class SequenceGeneratorDoc(SequenceGenerator):
                 # #### update source sep indice
                 # sep_indice_src = sep_indice_src.view(bsz, -1)[batch_idxs].view(new_bsz * beam_size, -1) 
                 sep_indice_tgt = sep_indice_tgt.view(bsz, -1)[batch_idxs].view(new_bsz * beam_size, -1) 
-                update_context_mask = True
+                update_context = True
                 # print('TEST update context mask (generated <eos>)')
                 # print('TEST.generate | update src &tgt sep indice', sep_indice_src.size() , sep_indice_tgt.size() )
                 if attn is not None:
@@ -528,7 +533,7 @@ class SequenceGeneratorDoc(SequenceGenerator):
                     # print('---------------------')
                     # print(f'TEST.generate | step | {step} |tokens:\n', tokens[:, : step + 2])
                     sep_indice_tgt = get_sep_info(tokens[:, : step + 2])
-                    update_context_mask = True
+                    update_context = True
                     # print('TEST update context mask (generated <sep>)')
                     # tmp = step_sep_info*(step+1)
                     # step_sep_idx = torch.where( tmp==0, self.sep_pad_idx, tmp)
@@ -739,7 +744,7 @@ class EnsembleModelMask(EnsembleModel):
         temperature: float = 1.0,
         sep_idx_src: Tensor = None,
         sep_idx_tgt: Tensor = None,
-        update_context_mask: bool = True, 
+        update_context: bool = True, 
     ):
         log_probs = []
         avg_attn: Optional[Tensor] = None
@@ -756,18 +761,17 @@ class EnsembleModelMask(EnsembleModel):
                     incremental_state=incremental_states[i],
                     sep_idx_src = sep_idx_src,
                     sep_idx_tgt = sep_idx_tgt,
-                    update_context_mask = update_context_mask,
+                    update_context = update_context,
                 )
             else:
-                # TODO ziqian make sure this works also for normal transformer
-                # update_context_mask is always True if not has_incremental_states
+                # update_context is always True if not has_incremental_states
                 if hasattr(model, "decoder"):
                     decoder_out = model.decoder.forward(
                         tokens, 
                         encoder_out = encoder_out,
                         sep_idx_src = sep_idx_src,
                         sep_idx_tgt = sep_idx_tgt,
-                        update_context_mask = True,
+                        update_context = True,
                         )
                 else:
                     decoder_out = model.forward(tokens)
@@ -811,7 +815,3 @@ class EnsembleModelMask(EnsembleModel):
         if avg_attn is not None:
             avg_attn.div_(self.models_size)
         return avg_probs, avg_attn
-
-
-
-   

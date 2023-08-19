@@ -1,5 +1,5 @@
-# adapt from fairseq.module.multihead_attention, 
-# modified to allow input attn_mask of shape ( N*n_head, T, S) as PyTorch
+# adapt from fairseq.module.multihead_attention_3d, 
+# TODO ziqian, add attention factor
 
 # Copyright (c) Facebook, Inc. and its affiliates.
 #
@@ -18,7 +18,7 @@ from fairseq import utils
 from fairseq.modules.multihead_attention import MultiheadAttention
 
 
-class MultiheadAttention3DMask(MultiheadAttention):
+class MultiheadAttention3DFactor(MultiheadAttention):
     """Multi-headed attention.
 
     See "Attention Is All You Need" for more details.
@@ -37,6 +37,7 @@ class MultiheadAttention3DMask(MultiheadAttention):
         before_softmax: bool = False,
         need_head_weights: bool = False,
         save_context: bool = False,
+        context_factor: Optional[Tensor] = None,
     ) -> Tuple[Tensor, Optional[Tensor]]:
         """Input shape: Time x Batch x Channel
 
@@ -86,6 +87,7 @@ class MultiheadAttention3DMask(MultiheadAttention):
             # Since pruning will break the dimension check and it is not easy to modify the pytorch API,
             # it is preferred to bypass the pytorch MHA when we need to skip embed_dim_check
             and not self.skip_embed_dim_check
+            and context_factor is None
         ):
             assert key is not None and value is not None
 
@@ -230,6 +232,9 @@ class MultiheadAttention3DMask(MultiheadAttention):
             saved_state["prev_key_padding_mask"] = key_padding_mask
             if save_context and attn_mask is not None:
                 saved_state["attn_mask"] = attn_mask
+            if save_context and context_factor is not None:
+                saved_state["attn_factor"] = context_factor
+
             # In this branch incremental_state is never None
             assert incremental_state is not None
             incremental_state = self._set_input_buffer(incremental_state, saved_state)
@@ -265,6 +270,21 @@ class MultiheadAttention3DMask(MultiheadAttention):
 
         assert list(attn_weights.size()) == [bsz * self.num_heads, tgt_len, src_len]
 
+        # attn factor
+        if context_factor is not None:
+            if context_factor.dim() == 2:
+                context_factor = context_factor.unsqueeze(0)
+                if self.onnx_trace:
+                    context_factor = context_factor.repeat(attn_weights.size(0), 1, 1)
+            elif context_factor.dim() == 3:
+                assert context_factor.size() == attn_weights.size(), f'{context_factor.size()} != {attn_weights.size()}'
+            else:
+                raise RuntimeError(f"attn_factor's dimension {context_factor.dim()} is not supported")
+            # print('TEST attn factor before\n', attn_weights[0])
+            attn_weights = attn_weights.mul(context_factor)
+            # print('TEST attn factor after\n', attn_weights[0])
+        
+        # attn_mask
         if attn_mask is not None:
             # ziqian modified this part to allow input attn_mask of shape (N*n_h, T, S) as PyTorch
             if attn_mask.dim() == 2:
@@ -275,18 +295,8 @@ class MultiheadAttention3DMask(MultiheadAttention):
                 assert attn_mask.size() == attn_weights.size(), f'{attn_mask.size()} != {attn_weights.size()}'
             else:
                 raise RuntimeError(f"attn_mask's dimension {attn_mask.dim()} is not supported")
-                
             attn_weights += attn_mask
-            # if self.encoder_decoder_attention:
-            #     print('TEST | attn_mask is not None')
-            #     print('attn_mask[:5]\n')
-            #     for i in range(attn_mask.size(1)):
-            #         print(attn_mask[0][i])
-            #     print('attn_weights[:5]\n')
-            #     for i in range(attn_mask.size(1)):
-            #         print(attn_weights[0][i])
-
-
+        
         if key_padding_mask is not None:
             # don't attend to padding symbols
             attn_weights = attn_weights.view(bsz, self.num_heads, tgt_len, src_len)
@@ -356,12 +366,6 @@ class MultiheadAttention3DMask(MultiheadAttention):
             if not need_head_weights:
                 # average attention weights over heads
                 attn_weights = attn_weights.mean(dim=0)
-
-            # if self.encoder_decoder_attention and attn_mask is not None:
-            #     print('TEST | average attn_weight[:5] | \n')
-            #     print('need head_weight', need_head_weights)
-            #     for i in range(attn_weights.size(2)):
-            #         print(attn_weights[0][0][i])
 
         return attn, attn_weights
 

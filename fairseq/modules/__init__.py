@@ -33,6 +33,7 @@ from .lstm_cell_with_zoneout import LSTMCellWithZoneOut
 from .multihead_attention import MultiheadAttention
 from .multihead_attention_mask import MultiheadAttentionMask # ziqian
 from .multihead_attention_3d import MultiheadAttention3DMask # ziqian
+from .multihead_attention_factor import MultiheadAttention3DFactor # ziqian
 from .positional_embedding import PositionalEmbedding
 from .same_pad import SamePad, SamePad2d
 from .scalar_bias import ScalarBias
@@ -43,10 +44,17 @@ from .transpose_last import TransposeLast
 from .unfold import unfold1d
 from .transformer_layer import TransformerDecoderLayer, TransformerEncoderLayer
 from .transformer_mask_layer import MaskedTransformerDecoderLayer #ziqian
+from .transformer_factor_layer import FadedTransformerDecoderLayer #ziqian
 from .batch_mask import (
     BatchMaskFuture,
     BatchMaskPast,
     BatchMaskAllSource,
+)
+
+from .batch_attention_factor import (
+    BatchAttnFactorSentFuture,
+    BatchAttnFactorSentPast,
+    BatchAttnFactorSentAll,
 )
 from .vggblock import VGGBlock
 from .espnet_multihead_attention import (
@@ -116,4 +124,9 @@ __all__ = [
     "BatchMaskFuture",
     "BatchMaskPast",
     "BatchMaskAllSource",
+    "MultiheadAttention3DFactor",
+    "FadedTransformerDecoderLayer",
+    "BatchAttnFactorSentFuture",
+    "BatchAttnFactorSentPast",
+    "BatchAttnFactorSentAll",
 ]

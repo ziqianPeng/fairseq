@@ -9,31 +9,36 @@ from fairseq.models.transformer import (
     TransformerModel,
     base_architecture,
 )
-from fairseq.models.transformer_mask_decoder import TransformerMaskDecoder
+from fairseq.models.transformer_factor_decoder import TransformerFactorDecoder
+
 
 # @register_model and @register_model_architecture are mandatory to define custom modules
-@register_model("transformer_mask")
-class TransformerMaskModel(TransformerModel):
+@register_model("transformer_factor")
+class TransformerFactorModel(TransformerModel):
     """
-    transformer model with source mask
+    transformer model with attention factor
     """
 
     def __init__(self, args, encoder, decoder):
         super().__init__(args, encoder, decoder)
-        print('TEST:', self.args.source_mask)
+        print('TEST:', self.args.factor_mode)
 
     @staticmethod
     def add_args(parser):
         # add model specific argument
         # fmt: off
         TransformerModel.add_args(parser)
-        parser.add_argument('--source-mask', type=str, default='past',
-                            help="choose between past and future to mask past or future context")
+        # parser.add_argument('--source-mask', type=str, default='past',
+        #                     help="choose between past, future and all to mask source context")
+        parser.add_argument('--factor-mode', type=str, default='past',
+                        help="choose between past, future and all to apply attention factor to source context")
+        parser.add_argument('--factor-base', type=float, default=0.9,
+                        help="a float between 0 and 1")
         # fmt: on
 
     @classmethod
     def build_decoder(cls, cfg, tgt_dict, embed_tokens):
-        return TransformerMaskDecoder(
+        return TransformerFactorDecoder(
             cfg,
             tgt_dict,
             embed_tokens,
@@ -47,16 +52,11 @@ class TransformerMaskModel(TransformerModel):
             prev_output_tokens, encoder_out,  sep_idx_src = sep_idx_src, sep_idx_tgt = sep_idx_tgt
             ) 
 
+@register_model_architecture("transformer_factor", "transformer_factor")
+def transformer_factor(args):
+    # args.source_mask = getattr(args, "source_mask", 'past')
+    args.factor_mode = getattr(args, "factor_mode", 'past')
 
-
-@register_model_architecture("transformer_mask", "transformer_mask")
-def transformer_mask(args):
-    args.source_mask = getattr(args, "source_mask", None) # TODO ziqian change None to past/future
-    print('TEST (transformer_mask):',args.source_mask)
+    print('TEST (transformer_factor):',args.factor_mode)
     base_architecture(args)
-
-# @register_model_architecture("transformer_mask", "transformer_mask_past")
-# def transformer_mask_past(args):
-#     args.source_mask = getattr(args, "source_mask", 'past') # TODO ziqian change None to past/future
-#     base_architecture(args)
 
