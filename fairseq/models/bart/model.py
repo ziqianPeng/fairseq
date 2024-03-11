@@ -283,6 +283,7 @@ class BARTModel(TransformerModel):
         """Set beam size for efficient beamable enc-dec attention."""
         beamable = False
         for layer in self.decoder.layers:
+            # logger.info(f'DEBUG...bart...hasattr(layer.encoder_attn, "set_beam_size")={hasattr(layer.encoder_attn, "set_beam_size")}')
             if layer.encoder_attn is not None:
                 if hasattr(layer.encoder_attn, "set_beam_size"):
                     layer.encoder_attn.set_beam_size(beam)

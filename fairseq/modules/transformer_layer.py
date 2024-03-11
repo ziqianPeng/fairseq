@@ -393,6 +393,7 @@ class TransformerDecoderLayerBase(nn.Module):
         self_attn_padding_mask: Optional[torch.Tensor] = None,
         need_attn: bool = False,
         need_head_weights: bool = False,
+        inference: Optional[bool] = False,
     ):
         """
         Args:
@@ -493,6 +494,7 @@ class TransformerDecoderLayerBase(nn.Module):
                 static_kv=True,
                 need_weights=need_attn or (not self.training and self.need_attn),
                 need_head_weights=need_head_weights,
+                inference=inference,
             )
             x = self.dropout_module(x)
             x = self.residual_connection(x, residual)

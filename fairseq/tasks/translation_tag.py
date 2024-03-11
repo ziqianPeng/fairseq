@@ -53,20 +53,32 @@ class TranslationTagTask(TranslationTask):
             filename (str): the filename
             extra_special_symbols: extra custom symbol to add
         """
-        if extra_special_symbols: 
-            return Dictionary.load(filename, extra_special_symbols = extra_special_symbols)
-            
+        if extra_special_symbols:
+                return Dictionary.load(filename, extra_special_symbols = extra_special_symbols)
         return Dictionary.load(filename)
+    
+    # @classmethod
+    # def load_dictionary(cls, filename, extra_special_symbols=None, extra_symbols_to_end = False):
+    #     """Load the dictionary from the filename"""
+    #     if extra_special_symbols:
+    #         if extra_symbols_to_end: 
+    #             d = Dictionary.load(filename)
+    #             d.add_extra_symbols(extra_special_symbols)
+    #             return d 
+    #         else:
+    #             return Dictionary.load(filename, extra_special_symbols = extra_special_symbols)
+    #     return Dictionary.load(filename)
 
     @classmethod
     def build_dictionary(
-        cls, filenames, workers=1, threshold=-1, nwords=-1, padding_factor=8, extra_special_symbols=None
+        cls, filenames, workers=1, threshold=-1, nwords=-1, padding_factor=8, extra_special_symbols=None #, extra_symbols_to_end = False
     ):
         """Build the dictionary
         rewrite to include extra special symbols
         check fairseq_task.py for the documentation of other argument
         """
-        d = Dictionary(extra_special_symbols = extra_special_symbols) 
+        
+        d = Dictionary(extra_special_symbols = extra_special_symbols) # if not extra_symbols_to_end and extra_special_symbols else Dictionary()
 
         for filename in filenames:
             Dictionary.add_file_to_dictionary(

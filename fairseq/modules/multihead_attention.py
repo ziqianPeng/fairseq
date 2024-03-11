@@ -24,6 +24,8 @@ from fairseq.modules.fairseq_dropout import FairseqDropout
 from fairseq.modules.quant_noise import quant_noise
 from fairseq.models.fairseq_incremental_decoder import FairseqIncrementalDecoder
 
+import logging
+logger = logging.getLogger(__name__)
 
 # TODO: move this into xformers?
 # TODO: uint8 input type should just output a bool
@@ -478,6 +480,7 @@ class MultiheadAttention(FairseqIncrementalDecoder):
         attn_mask: Optional[Tensor] = None,
         before_softmax: bool = False,
         need_head_weights: bool = False,
+        inference: Optional[bool] = False,
     ) -> Tuple[Tensor, Optional[Tensor]]:
         """Input shape: Time x Batch x Channel
 
@@ -582,8 +585,15 @@ class MultiheadAttention(FairseqIncrementalDecoder):
                 assert value is None
                 k = v = None
             else:
-                if self.beam_size > 1 and bsz == key.size(1):
+                # if inference:
+                    # logger.info(f'DEBUG...inference={inference}...beam_size={self.beam_size}...bsz={bsz}...key.shape={key.shape}')
+                if self.beam_size > 1 and bsz == key.size(1) and inference:
+                    # 2023-11-20 ziqian: if self.training (which is False for validation step), we do not use beam search
+                    # if incremental_state is not None we are doing inference
                     # key is [T, bsz*beam_size, C], reduce to [T, bsz, C]
+                    logger.info(f'DEBUG...bsz={bsz}...key.shape = {key.shape}...query.shape = {query.shape} self.training = {self.training}...inference={inference}...beam_size={self.beam_size}')
+                    logger.info(f'DEBUG...incremental_state is not None: {incremental_state is not None}')
+                    # raise RuntimeError(f"KEY.VIEW with beam_size=  {self.beam_size}")
                     key = key.view(key.size(0), -1, self.beam_size, key.size(2))[
                         :, :, 0, :
                     ]
@@ -856,6 +866,7 @@ class MultiheadAttention(FairseqIncrementalDecoder):
 
     def set_beam_size(self, beam_size):
         """Used for effiecient beamable enc-dec attention"""
+        # raise RuntimeError(f"SET BEAM SIZE to {beam_size}")
         self.beam_size = beam_size
 
     def _get_input_buffer(

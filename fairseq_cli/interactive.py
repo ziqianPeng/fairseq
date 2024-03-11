@@ -156,7 +156,6 @@ def main(cfg: FairseqConfig):
         strict=(cfg.checkpoint.checkpoint_shard_count == 1),
         num_shards=cfg.checkpoint.checkpoint_shard_count,
     )
-
     # Set dictionaries
     src_dict = task.source_dictionary
     tgt_dict = task.target_dictionary

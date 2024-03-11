@@ -37,11 +37,13 @@ class Dictionary:
             self.pad_index = self.add_symbol(pad)
             self.eos_index = self.add_symbol(eos)
             self.unk_index = self.add_symbol(unk)
+            # add extra special symbols
             if extra_special_symbols:
                 for s in extra_special_symbols:
                     self.add_symbol(s)
-                self.extra_symbols = [4 + i for i in range(len(extra_special_symbols))] #ziqian
+            # self.nspecial useful for the method 'finalize'  
             self.nspecial = len(self.symbols)
+        self.extra_special_symbols = extra_special_symbols if extra_special_symbols else []
 
     def __eq__(self, other):
         return self.indices == other.indices
@@ -216,7 +218,14 @@ class Dictionary:
         return self.unk_index
 
     def get_extra_symbols(self):
-        return self.extra_symbols
+        return [self.index(s) for s in self.extra_special_symbols]
+    
+    def add_extra_symbols(self, sym_list):
+        for s in sym_list:
+            assert(s not in self.indices)
+            self.add_symbol(s)
+            self.extra_special_symbols.append(s)
+
 
     @classmethod
     def load(cls, f, add_special_symbols=True, extra_special_symbols = None):

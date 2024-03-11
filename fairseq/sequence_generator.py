@@ -15,7 +15,9 @@ from fairseq import search, utils
 from fairseq.data import data_utils
 from fairseq.models import FairseqIncrementalDecoder
 from fairseq.ngram_repeat_block import NGramRepeatBlock
+import logging
 
+logger = logging.getLogger(__name__)
 
 class SequenceGenerator(nn.Module):
     def __init__(
@@ -255,6 +257,7 @@ class SequenceGenerator(nn.Module):
         # Note that src_tokens may have more than 2 dimensions (i.e. audio features)
         bsz, src_len = src_tokens.size()[:2]
         beam_size = self.beam_size
+        # logger.info(f'DEBUG1...bsz={bsz}...beam_size={self.beam_size}...self.training = {self.training}')
 
         if constraints is not None and not self.search.supports_constraints:
             raise NotImplementedError(
@@ -826,11 +829,13 @@ class EnsembleModel(nn.Module):
                     tokens,
                     encoder_out=encoder_out,
                     incremental_state=incremental_states[i],
+                    inference=True,
                 )
             else:
                 if hasattr(model, "decoder"):
-                    decoder_out = model.decoder.forward(tokens, encoder_out=encoder_out)
+                    decoder_out = model.decoder.forward(tokens, encoder_out=encoder_out, inference=True,)
                 else:
+                    logger.info('DEBUG--------------=========')
                     decoder_out = model.forward(tokens)
 
             attn: Optional[Tensor] = None

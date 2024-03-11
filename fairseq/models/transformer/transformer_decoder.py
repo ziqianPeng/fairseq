@@ -194,6 +194,7 @@ class TransformerDecoderBase(FairseqIncrementalDecoder):
         alignment_heads: Optional[int] = None,
         src_lengths: Optional[Any] = None,
         return_all_hiddens: bool = False,
+        inference: Optional[bool] = False,
     ):
         """
         Args:
@@ -221,6 +222,7 @@ class TransformerDecoderBase(FairseqIncrementalDecoder):
             full_context_alignment=full_context_alignment,
             alignment_layer=alignment_layer,
             alignment_heads=alignment_heads,
+            inference=inference,
         )
 
         if not features_only:
@@ -235,6 +237,7 @@ class TransformerDecoderBase(FairseqIncrementalDecoder):
         full_context_alignment: bool = False,
         alignment_layer: Optional[int] = None,
         alignment_heads: Optional[int] = None,
+        inference: Optional[bool] = False,
     ):
         return self.extract_features_scriptable(
             prev_output_tokens,
@@ -243,6 +246,7 @@ class TransformerDecoderBase(FairseqIncrementalDecoder):
             full_context_alignment,
             alignment_layer,
             alignment_heads,
+            inference,
         )
 
     """
@@ -259,6 +263,7 @@ class TransformerDecoderBase(FairseqIncrementalDecoder):
         full_context_alignment: bool = False,
         alignment_layer: Optional[int] = None,
         alignment_heads: Optional[int] = None,
+        inference: Optional[bool] = False,
     ):
         """
         Similar to *forward* but only return features.
@@ -346,6 +351,7 @@ class TransformerDecoderBase(FairseqIncrementalDecoder):
                 self_attn_padding_mask=self_attn_padding_mask,
                 need_attn=bool((idx == alignment_layer)),
                 need_head_weights=bool((idx == alignment_layer)),
+                inference = inference,
             )
             inner_states.append(x)
             if layer_attn is not None and idx == alignment_layer:

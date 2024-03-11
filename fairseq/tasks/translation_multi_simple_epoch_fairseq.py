@@ -14,7 +14,6 @@ from fairseq.data import (
     ListDataset,
     data_utils,
     iterators,
-    encoders, # eval_bleu
 )
 from fairseq.data.multilingual.multilingual_data_manager import (
     MultilingualDatasetManager,
@@ -23,27 +22,21 @@ from fairseq.data.multilingual.sampling_method import SamplingMethod
 from fairseq.tasks import LegacyFairseqTask, register_task
 from fairseq.utils import FileContentsAction
 
-### eval_bleu
-import json
-from argparse import Namespace
-from fairseq.logging import metrics
-import numpy as np
-from fairseq import utils
-
-EVAL_BLEU_ORDER = 4
 
 ###
 def get_time_gap(s, e):
     return (
         datetime.datetime.fromtimestamp(e) - datetime.datetime.fromtimestamp(s)
     ).__str__()
+
+
 ###
 
 
 logger = logging.getLogger(__name__)
 
 
-@register_task("translation_multi_simple_epoch")
+# @register_task("translation_multi_simple_epoch_fairseq")
 class TranslationMultiSimpleEpochTask(LegacyFairseqTask):
     """
     Translate from one (source) language to another (target) language.
@@ -79,38 +72,11 @@ class TranslationMultiSimpleEpochTask(LegacyFairseqTask):
                             action=FileContentsAction)
         parser.add_argument('--keep-inference-langtok', action='store_true',
                             help='keep language tokens in inference output (e.g. for analysis or debugging)')
-        parser.add_argument('--extra-symbols-to-end', default=None, 
-            help="list of extra_special_symbols to append in the dictionary, separate by single space")
+        parser.add_argument('--extra-symbols', default=None, 
+            help="list of extra_special_symbols, separate by single space")
 
         SamplingMethod.add_arguments(parser)
         MultilingualDatasetManager.add_args(parser)
-        # options for reporting BLEU during validation
-                # options for reporting BLEU during validation
-        parser.add_argument('--eval-bleu', action='store_true',
-                            help='evaluation with BLEU scores'
-                            )
-        parser.add_argument('--eval-bleu-detok', type=str, default="space",
-                            help='detokenize before computing BLEU (e.g., "moses"); '
-                                 'required if using --eval-bleu; use "space" to '
-                                 'disable detokenization; see fairseq.data.encoders '
-                                 'for other options'
-                                 )
-        parser.add_argument('--eval-bleu-detok-args', type=str, default="{}", metavar='JSON',
-                            help='args for building the tokenizer, if needed'
-                            )
-        parser.add_argument('--eval-tokenized-bleu', action='store_true', default=False,
-                            help='compute tokenized BLEU instead of sacrebleu'
-                            )
-        parser.add_argument('--eval-bleu-remove-bpe', nargs='?', const='@@ ', default=None,
-                            help='remove BPE before computing BLEU'
-                            )
-        parser.add_argument('--eval-bleu-args', type=str, metavar='JSON',
-                            help='generation args for BLUE scoring, '
-                                 'e.g., \'{"beam": 4, "lenpen": 0.6}\''
-                                 )
-        parser.add_argument('--eval-bleu-print-samples', action='store_true',
-                            help='print sample generations during validation'
-                            )
         # fmt: on
 
     def __init__(self, args, langs, dicts, training):
@@ -118,10 +84,8 @@ class TranslationMultiSimpleEpochTask(LegacyFairseqTask):
         self.langs = langs
         self.dicts = dicts
         self.training = training
-        # logger.info(f'DEBUG...training..init...={training}')
         if training:
             self.lang_pairs = args.lang_pairs
-            # logger.info(f'DEBUG...lang_pairs..init...={args.lang_pairs}')
         else:
             self.lang_pairs = ["{}-{}".format(args.source_lang, args.target_lang)]
         # eval_lang_pairs for multilingual translation is usually all of the
@@ -165,7 +129,6 @@ class TranslationMultiSimpleEpochTask(LegacyFairseqTask):
         langs, dicts, training = MultilingualDatasetManager.prepare(
             cls.load_dictionary, args, **kwargs
         )
-        # logger.info(f'DEBUG...training..setup_task...={training}')
         return cls(args, langs, dicts, training)
 
     def has_sharded_data(self, split):
@@ -216,25 +179,20 @@ class TranslationMultiSimpleEpochTask(LegacyFairseqTask):
         src_data = ListDataset(src_tokens, src_lengths)
         dataset = LanguagePairDataset(src_data, src_lengths, self.source_dictionary)
         src_langtok_spec, tgt_langtok_spec = self.args.langtoks["main"]
-        # 2023-11-20 ziqian: enable inference at validation step, when source_lang or target_lang is not given in training arguments
-        source_lang = self.source_langs[0] if self.args.source_lang is None else self.args.source_lang 
-        target_lang = self.target_langs[0] if self.args.target_lang is None else self.args.target_lang 
-        logger.info(f'Buiding dataset for inference with source language {source_lang} and target language {target_lang}...')
-
         if self.args.lang_tok_replacing_bos_eos:
             dataset = self.data_manager.alter_dataset_langtok(
                 dataset,
                 src_eos=self.source_dictionary.eos(),
-                src_lang=source_lang,
+                src_lang=self.args.source_lang,
                 tgt_eos=self.target_dictionary.eos(),
-                tgt_lang=target_lang,
+                tgt_lang=self.args.target_lang,
                 src_langtok_spec=src_langtok_spec,
                 tgt_langtok_spec=tgt_langtok_spec,
             )
         else:
             dataset.src = self.data_manager.src_dataset_tranform_func(
-                source_lang,
-                target_lang,
+                self.args.source_lang,
+                self.args.target_lang,
                 dataset=dataset.src,
                 spec=src_langtok_spec,
             )
@@ -246,76 +204,36 @@ class TranslationMultiSimpleEpochTask(LegacyFairseqTask):
         args,
         seq_gen_cls=None,
         extra_gen_cls_kwargs=None,
-        prefix_allowed_tokens_fn=None,
     ):
         if not getattr(args, "keep_inference_langtok", False):
             _, tgt_langtok_spec = self.args.langtoks["main"]
-            # logger.info(f'DEBUG...{self.args.target_lang}...{self.target_langs}')
             if tgt_langtok_spec:
-                # 2023-11-20 ziqian: enable inference at validation step, when source_lang or target_lang is not given in training arguments
-                target_lang = self.target_langs[0] if self.args.target_lang is None else self.args.target_lang 
                 tgt_lang_tok = self.data_manager.get_decoder_langtok(
-                    target_lang, tgt_langtok_spec
+                    self.args.target_lang, tgt_langtok_spec
                 )
                 extra_gen_cls_kwargs = extra_gen_cls_kwargs or {}
                 extra_gen_cls_kwargs["symbols_to_strip_from_output"] = {tgt_lang_tok}
 
         return super().build_generator(
-            models, args, seq_gen_cls=None, extra_gen_cls_kwargs=extra_gen_cls_kwargs, 
-            prefix_allowed_tokens_fn = prefix_allowed_tokens_fn
+            models, args, seq_gen_cls=None, extra_gen_cls_kwargs=extra_gen_cls_kwargs
         )
 
-    # def build_model(self, args, from_checkpoint=False):
-    #     return super().build_model(args, from_checkpoint)
-    
     def build_model(self, args, from_checkpoint=False):
-        # adapt from build_model of TranslationTask
-        logger.info('TO CLEAN...build_model')
-        model = super().build_model(args, from_checkpoint)
-        if self.args.eval_bleu:
-            detok_args = json.loads(self.args.eval_bleu_detok_args)
-            self.tokenizer = encoders.build_tokenizer(
-                Namespace(tokenizer=self.args.eval_bleu_detok, **detok_args)
-            )
-
-            gen_args = json.loads(self.args.eval_bleu_args)
-            self.sequence_generator = self.build_generator(
-                [model], Namespace(**gen_args)
-            )
-        return model
-
-    # def valid_step(self, sample, model, criterion):
-    #     loss, sample_size, logging_output = super().valid_step(sample, model, criterion)
-    #     return loss, sample_size, logging_output
+        return super().build_model(args, from_checkpoint)
 
     def valid_step(self, sample, model, criterion):
-        # adapt from TranslationTask
         loss, sample_size, logging_output = super().valid_step(sample, model, criterion)
-        # logger.info(f'DEBUG....vali_step...{loss}...{sample_size}')
-        if self.args.eval_bleu:
-            bleu = self._inference_with_bleu(self.sequence_generator, sample, model)
-            logging_output["_bleu_sys_len"] = bleu.sys_len
-            logging_output["_bleu_ref_len"] = bleu.ref_len
-            # we split counts into separate entries so that they can be
-            # summed efficiently across workers using fast-stat-sync
-            assert len(bleu.counts) == EVAL_BLEU_ORDER
-            for i in range(EVAL_BLEU_ORDER):
-                logging_output["_bleu_counts_" + str(i)] = bleu.counts[i]
-                logging_output["_bleu_totals_" + str(i)] = bleu.totals[i]
         return loss, sample_size, logging_output
-
 
     def inference_step(
         self, generator, models, sample, prefix_tokens=None, constraints=None
     ):
         with torch.no_grad():
             _, tgt_langtok_spec = self.args.langtoks["main"]
-            # 2023-11-20 ziqian: enable inference at validation step, when source_lang or target_lang is not given in training arguments
-            target_lang = self.target_langs[0] if self.args.target_lang is None else self.args.target_lang 
             if not self.args.lang_tok_replacing_bos_eos:
                 if prefix_tokens is None and tgt_langtok_spec:
                     tgt_lang_tok = self.data_manager.get_decoder_langtok(
-                        target_lang, tgt_langtok_spec
+                        self.args.target_lang, tgt_langtok_spec
                     )
                     src_tokens = sample["net_input"]["src_tokens"]
                     bsz = src_tokens.size(0)
@@ -334,105 +252,14 @@ class TranslationMultiSimpleEpochTask(LegacyFairseqTask):
                     sample,
                     prefix_tokens=prefix_tokens,
                     bos_token=self.data_manager.get_decoder_langtok(
-                        target_lang, tgt_langtok_spec
+                        self.args.target_lang, tgt_langtok_spec
                     )
                     if tgt_langtok_spec
                     else self.target_dictionary.eos(),
                 )
-            
-    def _inference_with_bleu(self, generator, sample, model):
-        import sacrebleu
-
-        def decode(toks, escape_unk=False):
-            s = self.target_dictionary.string(
-                toks.int().cpu(),
-                self.args.eval_bleu_remove_bpe,
-                # The default unknown string in fairseq is `<unk>`, but
-                # this is tokenized by sacrebleu as `< unk >`, inflating
-                # BLEU scores. Instead, we use a somewhat more verbose
-                # alternative that is unlikely to appear in the real
-                # reference, but doesn't get split into multiple tokens.
-                unk_string=("UNKNOWNTOKENINREF" if escape_unk else "UNKNOWNTOKENINHYP"),
-            )
-            if self.tokenizer:
-                s = self.tokenizer.decode(s)
-            return s
-
-        gen_out = self.inference_step(generator, [model], sample, prefix_tokens=None)
-        hyps, refs = [], []
-        for i in range(len(gen_out)):
-            hyps.append(decode(gen_out[i][0]["tokens"]))
-            refs.append(
-                decode(
-                    utils.strip_pad(sample["target"][i], self.target_dictionary.pad()),
-                    escape_unk=True,  # don't count <unk> as matches to the hypo
-                )
-            )
-        
-        if self.args.eval_bleu_print_samples:
-            logger.info("example hypothesis: " + hyps[0])
-            logger.info("example reference: " + refs[0])
-        if self.args.eval_tokenized_bleu:
-            return sacrebleu.corpus_bleu(hyps, [refs], tokenize="none")
-        else:
-            return sacrebleu.corpus_bleu(hyps, [refs])
-        
-    # def reduce_metrics(self, logging_outputs, criterion):
-    #     super().reduce_metrics(logging_outputs, criterion)
 
     def reduce_metrics(self, logging_outputs, criterion):
-        # adapt from TranslationTask
         super().reduce_metrics(logging_outputs, criterion)
-        if self.args.eval_bleu:
-
-            def sum_logs(key):
-                import torch
-
-                result = sum(log.get(key, 0) for log in logging_outputs)
-                if torch.is_tensor(result):
-                    result = result.cpu()
-                return result
-
-            counts, totals = [], []
-            for i in range(EVAL_BLEU_ORDER):
-                counts.append(sum_logs("_bleu_counts_" + str(i)))
-                totals.append(sum_logs("_bleu_totals_" + str(i)))
-
-            if max(totals) > 0:
-                # log counts as numpy arrays -- log_scalar will sum them correctly
-                metrics.log_scalar("_bleu_counts", np.array(counts))
-                metrics.log_scalar("_bleu_totals", np.array(totals))
-                metrics.log_scalar("_bleu_sys_len", sum_logs("_bleu_sys_len"))
-                metrics.log_scalar("_bleu_ref_len", sum_logs("_bleu_ref_len"))
-
-                def compute_bleu(meters):
-                    import inspect
-
-                    try:
-                        from sacrebleu.metrics import BLEU
-
-                        comp_bleu = BLEU.compute_bleu
-                    except ImportError:
-                        # compatibility API for sacrebleu 1.x
-                        import sacrebleu
-
-                        comp_bleu = sacrebleu.compute_bleu
-
-                    fn_sig = inspect.getfullargspec(comp_bleu)[0]
-                    if "smooth_method" in fn_sig:
-                        smooth = {"smooth_method": "exp"}
-                    else:
-                        smooth = {"smooth": "exp"}
-                    bleu = comp_bleu(
-                        correct=meters["_bleu_counts"].sum,
-                        total=meters["_bleu_totals"].sum,
-                        sys_len=int(meters["_bleu_sys_len"].sum),
-                        ref_len=int(meters["_bleu_ref_len"].sum),
-                        **smooth,
-                    )
-                    return round(bleu.score, 2)
-
-                metrics.log_derived("bleu", compute_bleu)
 
     def max_positions(self):
         """Return the max sentence length allowed by the task."""

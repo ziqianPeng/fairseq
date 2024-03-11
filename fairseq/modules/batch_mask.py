@@ -294,6 +294,9 @@ class BatchMaskAllSource(BatchMask):
         leftpad_src = 0 if self.pad_left_src is None else self.pad_left_src[idx]
         if leftpad_src > 0:
             mask[:, :leftpad_src] = torch.tensor(False)
+            
+        # if do not mask </s>
+        # mask[:, -1 ] = torch.tensor(False)
 
         # +1 to mask <sep>, mask nothing if sep_tgt = [0]
         nb_tgt = len(sep_tgt)
@@ -332,6 +335,8 @@ class BatchMaskAllSource(BatchMask):
             mask[:, :leftpad_src] = torch.tensor(False)
         if leftpad_tgt > 0:
             mask[:leftpad_tgt, :] = torch.tensor(False)
+        # if do not mask </s>
+        # mask[leftpad_tgt:, -1 ] = torch.tensor(False)
 
         if len(sep_tgt) == 1 and len(sep_src) > 1:
             # during inference, when generating the first sentence (only have future)

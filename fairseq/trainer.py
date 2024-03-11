@@ -523,6 +523,51 @@ class Trainer(object):
 
             # load model parameters
             try:
+                # ZP 2024-03-08 extend positional embedding size of pretrained model
+                logger.info(
+                        f"ZP max_source_position = {self.cfg.model.max_source_positions}, max_target_position {self.cfg.model.max_target_positions}"
+                    )
+
+                # encoder_pos = state['model']['encoder.embed_positions.weight']
+                # to_append = encoder_pos[2:]
+                # new_encoder_pos = torch.cat((encoder_pos, to_append))
+                # state['model']['encoder.embed_positions.weight'] = new_encoder_pos
+
+                # encoder 
+                loaded_num_pos, loaded_dim_pos = state['model']['encoder.embed_positions.weight'].shape
+                current_num_pos, current_dim_pos = self.model.encoder.embed_positions.weight.shape
+                begin_pos = self.cfg.model.pad +1
+                assert(current_num_pos == self.cfg.model.max_source_positions + begin_pos)
+                if loaded_num_pos < current_num_pos and loaded_dim_pos == current_dim_pos :
+                    logger.info( 
+                        f"extending encoder positional embedding size of loaded checkpoint from ({loaded_num_pos}, {loaded_dim_pos}) to ({current_num_pos}, {current_dim_pos})"
+                    )
+                    extend_embed_pos_enc = self.model.encoder.embed_positions.weight.detach().clone()
+                    extend_embed_pos_enc[:loaded_num_pos] = state['model']['encoder.embed_positions.weight']
+                    
+                    # todo the case of extend_max_pos > 2*current_max pos
+                    if current_num_pos >= 2 * (loaded_dim_pos-begin_pos):
+                        extend_embed_pos_enc[loaded_num_pos: loaded_num_pos*2-begin_pos] = state['model']['encoder.embed_positions.weight'][begin_pos:]
+
+                    state['model']['encoder.embed_positions.weight'] = extend_embed_pos_enc
+
+                # decoder
+                loaded_num_pos, loaded_dim_pos = state['model']['decoder.embed_positions.weight'].shape
+                current_num_pos, current_dim_pos = self.model.decoder.embed_positions.weight.shape
+                assert(current_num_pos == self.cfg.model.max_target_positions + begin_pos)
+                if loaded_num_pos < current_num_pos and loaded_dim_pos == current_dim_pos :
+                    logger.info( 
+                        f"extending decoder positional embedding size of loaded checkpoint from ({loaded_num_pos}, {loaded_dim_pos}) to ({current_num_pos}, {current_dim_pos})"
+                    )
+                    extend_embed_pos_dec = self.model.decoder.embed_positions.weight.detach().clone()
+                    extend_embed_pos_dec[:loaded_num_pos] = state['model']['decoder.embed_positions.weight']
+                    
+                    if current_num_pos >= 2 * (loaded_dim_pos-begin_pos):
+                        extend_embed_pos_dec[loaded_num_pos: loaded_num_pos*2-begin_pos] = state['model']['decoder.embed_positions.weight'][begin_pos:]
+
+                    state['model']['decoder.embed_positions.weight'] = extend_embed_pos_dec
+                ############################################
+                
                 if (
                     "optimizer_history" in state
                     and len(state["optimizer_history"]) > 0
