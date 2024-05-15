@@ -29,6 +29,7 @@ from argparse import Namespace
 from fairseq.logging import metrics
 import numpy as np
 from fairseq import utils
+# from fairseq.utils import safe_hasattr
 
 EVAL_BLEU_ORDER = 4
 
@@ -84,8 +85,11 @@ class TranslationMultiSimpleEpochTask(LegacyFairseqTask):
 
         SamplingMethod.add_arguments(parser)
         MultilingualDatasetManager.add_args(parser)
+        # # Ziqian 2024-03-27 position offset
+        parser.add_argument('--offset', type = int, default=0, 
+            help="position index offset of input sequence, default is 0, so the input position begins at 0 + padding_idx")
+
         # options for reporting BLEU during validation
-                # options for reporting BLEU during validation
         parser.add_argument('--eval-bleu', action='store_true',
                             help='evaluation with BLEU scores'
                             )
@@ -118,10 +122,8 @@ class TranslationMultiSimpleEpochTask(LegacyFairseqTask):
         self.langs = langs
         self.dicts = dicts
         self.training = training
-        # logger.info(f'DEBUG...training..init...={training}')
         if training:
             self.lang_pairs = args.lang_pairs
-            # logger.info(f'DEBUG...lang_pairs..init...={args.lang_pairs}')
         else:
             self.lang_pairs = ["{}-{}".format(args.source_lang, args.target_lang)]
         # eval_lang_pairs for multilingual translation is usually all of the
@@ -142,6 +144,8 @@ class TranslationMultiSimpleEpochTask(LegacyFairseqTask):
         self.data_manager = MultilingualDatasetManager.setup_data_manager(
             args, self.lang_pairs, langs, dicts, self.sampling_method
         )
+        logger.info(f'position offset = {args.offset}')
+        self.offset = args.offset
 
     def check_dicts(self, dicts, source_langs, target_langs):
         if self.args.source_dict is not None or self.args.target_dict is not None:
@@ -248,17 +252,21 @@ class TranslationMultiSimpleEpochTask(LegacyFairseqTask):
         extra_gen_cls_kwargs=None,
         prefix_allowed_tokens_fn=None,
     ):
+        if extra_gen_cls_kwargs is not None:
+            logger.info(f'extra_gen_cls_kwargs = {extra_gen_cls_kwargs.get( "symbols_to_strip_from_output", "None" )}')
+        # args is args for generation in general
         if not getattr(args, "keep_inference_langtok", False):
-            _, tgt_langtok_spec = self.args.langtoks["main"]
-            # logger.info(f'DEBUG...{self.args.target_lang}...{self.target_langs}')
-            if tgt_langtok_spec:
-                # 2023-11-20 ziqian: enable inference at validation step, when source_lang or target_lang is not given in training arguments
-                target_lang = self.target_langs[0] if self.args.target_lang is None else self.args.target_lang 
-                tgt_lang_tok = self.data_manager.get_decoder_langtok(
-                    target_lang, tgt_langtok_spec
-                )
-                extra_gen_cls_kwargs = extra_gen_cls_kwargs or {}
-                extra_gen_cls_kwargs["symbols_to_strip_from_output"] = {tgt_lang_tok}
+            # self.args is args of the current task
+            if not getattr(self.args, "keep_inference_langtok", False):
+                _, tgt_langtok_spec = self.args.langtoks["main"]
+                if tgt_langtok_spec:
+                    # 2023-11-20 ziqian: enable inference at validation step, when source_lang or target_lang is not given in training arguments
+                    target_lang = self.target_langs[0] if self.args.target_lang is None else self.args.target_lang 
+                    tgt_lang_tok = self.data_manager.get_decoder_langtok(
+                        target_lang, tgt_langtok_spec
+                    )
+                    extra_gen_cls_kwargs = extra_gen_cls_kwargs or {}
+                    extra_gen_cls_kwargs["symbols_to_strip_from_output"] = {tgt_lang_tok}
 
         return super().build_generator(
             models, args, seq_gen_cls=None, extra_gen_cls_kwargs=extra_gen_cls_kwargs, 
@@ -270,8 +278,22 @@ class TranslationMultiSimpleEpochTask(LegacyFairseqTask):
     
     def build_model(self, args, from_checkpoint=False):
         # adapt from build_model of TranslationTask
-        logger.info('TO CLEAN...build_model')
+        # the args here is cfg.model
+        if hasattr(self.args, 'max_source_positions') and self.args.max_source_positions != args.max_source_positions:
+            args.max_source_positions = self.args.max_source_positions
+            logger.info(f"WARNING: set model's max_source_position as {self.args.max_source_positions}")
+        
+        if hasattr(self.args, 'max_target_positions') and self.args.max_target_positions != args.max_target_positions:
+            args.max_target_positions = self.args.max_target_positions
+            logger.info(f"WARNING: set model's max_target_position as {self.args.max_target_positions}")
+
+        if self.args.offset != getattr(args, 'offset', None) :
+            logger.info(f"WARNING: changing model's position offset from {getattr(args, 'offset', None)} to {self.args.offset}")
+            setattr(args, 'offset', self.get_offset() )
+
         model = super().build_model(args, from_checkpoint)
+                
+
         if self.args.eval_bleu:
             detok_args = json.loads(self.args.eval_bleu_detok_args)
             self.tokenizer = encoders.build_tokenizer(
@@ -437,6 +459,9 @@ class TranslationMultiSimpleEpochTask(LegacyFairseqTask):
     def max_positions(self):
         """Return the max sentence length allowed by the task."""
         return (self.args.max_source_positions, self.args.max_target_positions)
+    
+    def get_offset(self):
+        return self.offset
 
     @property
     def source_dictionary(self):

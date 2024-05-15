@@ -29,6 +29,7 @@ from fairseq.file_io import PathManager
 from fairseq.models import FairseqDecoder, FairseqEncoder
 from omegaconf import DictConfig, OmegaConf, open_dict
 
+
 logger = logging.getLogger(__name__)
 
 
@@ -490,6 +491,7 @@ def load_model_ensemble_and_task(
                     and "num_updates" in state["optimizer_history"][-1]
                 ):
                     model.set_num_updates(state["optimizer_history"][-1]["num_updates"])
+
                 model.load_state_dict(
                     state["model"], strict=strict, model_cfg=cfg.model
                 )

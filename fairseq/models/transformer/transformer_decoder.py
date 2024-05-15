@@ -57,6 +57,7 @@ class TransformerDecoderBase(FairseqIncrementalDecoder):
         no_encoder_attn=False,
         output_projection=None,
     ):
+        # here the cfg is TransformerConfig
         self.cfg = cfg
         super().__init__(dictionary)
         self.register_buffer("version", torch.Tensor([3]))
@@ -100,6 +101,7 @@ class TransformerDecoderBase(FairseqIncrementalDecoder):
                 embed_dim,
                 self.padding_idx,
                 learned=cfg.decoder.learned_pos,
+                offset=cfg.offset,
             )
             if not cfg.no_token_positional_embeddings
             else None

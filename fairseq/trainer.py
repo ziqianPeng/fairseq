@@ -545,9 +545,9 @@ class Trainer(object):
                     extend_embed_pos_enc = self.model.encoder.embed_positions.weight.detach().clone()
                     extend_embed_pos_enc[:loaded_num_pos] = state['model']['encoder.embed_positions.weight']
                     
-                    # todo the case of extend_max_pos > 2*current_max pos
-                    if current_num_pos >= 2 * (loaded_dim_pos-begin_pos):
-                        extend_embed_pos_enc[loaded_num_pos: loaded_num_pos*2-begin_pos] = state['model']['encoder.embed_positions.weight'][begin_pos:]
+                    # # todo the case of extend_max_pos > 2*current_max pos
+                    # if current_num_pos >= 2 * (loaded_dim_pos-begin_pos):
+                    #     extend_embed_pos_enc[loaded_num_pos: loaded_num_pos*2-begin_pos] = state['model']['encoder.embed_positions.weight'][begin_pos:]
 
                     state['model']['encoder.embed_positions.weight'] = extend_embed_pos_enc
 
@@ -562,8 +562,8 @@ class Trainer(object):
                     extend_embed_pos_dec = self.model.decoder.embed_positions.weight.detach().clone()
                     extend_embed_pos_dec[:loaded_num_pos] = state['model']['decoder.embed_positions.weight']
                     
-                    if current_num_pos >= 2 * (loaded_dim_pos-begin_pos):
-                        extend_embed_pos_dec[loaded_num_pos: loaded_num_pos*2-begin_pos] = state['model']['decoder.embed_positions.weight'][begin_pos:]
+                    # if current_num_pos >= 2 * (loaded_dim_pos-begin_pos):
+                    #     extend_embed_pos_dec[loaded_num_pos: loaded_num_pos*2-begin_pos] = state['model']['decoder.embed_positions.weight'][begin_pos:]
 
                     state['model']['decoder.embed_positions.weight'] = extend_embed_pos_dec
                 ############################################

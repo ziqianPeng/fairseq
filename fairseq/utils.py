@@ -252,8 +252,8 @@ def post_process_prediction(
         hypo_tokens = tgt_dict.encode_line(hypo_str, add_if_not_exist=True)
     return hypo_tokens, hypo_str, alignment
 
-
-def make_positions(tensor, padding_idx: int, onnx_trace: bool = False):
+# ziqian test position idx offset 2024-03-27, offset : position index of input sequence begins with offset + padding_idx
+def make_positions(tensor, padding_idx: int, onnx_trace: bool = False, offset: int = 0):
     """Replace non-padding symbols with their position numbers.
 
     Position numbers begin at padding_idx+1. Padding symbols are ignored.
@@ -263,7 +263,7 @@ def make_positions(tensor, padding_idx: int, onnx_trace: bool = False):
     # prefers ints, cumsum defaults to output longs, and ONNX doesn't know
     # how to handle the dtype kwarg in cumsum.
     mask = tensor.ne(padding_idx).int()
-    return (torch.cumsum(mask, dim=1).type_as(mask) * mask).long() + padding_idx
+    return ( (torch.cumsum(mask, dim=1).type_as(mask) + offset) * mask).long() + padding_idx 
 
 
 def strip_pad(tensor, pad):
