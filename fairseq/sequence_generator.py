@@ -41,6 +41,7 @@ class SequenceGenerator(nn.Module):
         lm_model=None,
         lm_weight=1.0,
         tokens_to_suppress=(),
+        active_uniform_pos_inference: Optional[bool] = False,
     ):
         """Generates translations of a given source sentence.
 
@@ -124,6 +125,9 @@ class SequenceGenerator(nn.Module):
         self.should_set_src_lengths = (
             hasattr(self.search, "needs_src_lengths") and self.search.needs_src_lengths
         )
+
+        # 2024-06-10 ziqian add posunif offset
+        self.active_uniform_pos_inference = active_uniform_pos_inference 
 
         self.model.eval()
 
@@ -280,7 +284,7 @@ class SequenceGenerator(nn.Module):
         ), "min_len cannot be larger than max_len, please adjust these!"
         # compute the encoder output for each beam
         with torch.autograd.profiler.record_function("EnsembleModel: forward_encoder"):
-            encoder_outs = self.model.forward_encoder(net_input)
+            encoder_outs = self.model.forward_encoder(net_input, active_uniform_pos_inference = self.active_uniform_pos_inference)
 
         # placeholder of indices for bsz * beam_size to hold tokens and accumulative scores
         new_order = torch.arange(bsz).view(-1, 1).repeat(1, beam_size).view(-1)
@@ -341,6 +345,10 @@ class SequenceGenerator(nn.Module):
         else:
             original_batch_idxs = torch.arange(0, bsz).type_as(tokens)
 
+        # ziqian 2024-06-10 pos unif dev
+        tgt_offsets = None
+        if net_input.get("src_offsets", None) is not None:
+            tgt_offsets = net_input.get("src_offsets").view(-1, 1).repeat(1, beam_size).view(-1,1).clone()
         for step in range(max_len + 1):  # one extra step for EOS marker
             # reorder decoder internal states based on the prev choice of beams
             if reorder_state is not None:
@@ -365,6 +373,8 @@ class SequenceGenerator(nn.Module):
                     encoder_outs,
                     incremental_states,
                     self.temperature,
+                    tgt_offsets = tgt_offsets,
+                    active_uniform_pos_inference = self.active_uniform_pos_inference,
                 )
 
             if self.lm_model is not None:
@@ -510,6 +520,9 @@ class SequenceGenerator(nn.Module):
 
                 scores = scores.view(bsz, -1)[batch_idxs].view(new_bsz * beam_size, -1)
                 tokens = tokens.view(bsz, -1)[batch_idxs].view(new_bsz * beam_size, -1)
+                # ziqian 2024-06-10 posUnif
+                if tgt_offsets is not None:
+                    tgt_offsets = tgt_offsets.view(bsz, -1)[batch_idxs].view(new_bsz * beam_size, -1)
                 if attn is not None:
                     attn = attn.view(bsz, -1)[batch_idxs].view(
                         new_bsz * beam_size, attn.size(1), -1
@@ -804,10 +817,17 @@ class EnsembleModel(nn.Module):
                     model.set_beam_size(beam_size)
 
     @torch.jit.export
-    def forward_encoder(self, net_input: Dict[str, Tensor]):
+    def forward_encoder(self, net_input: Dict[str, Tensor], active_uniform_pos_inference:Optional[bool] = None):
         if not self.has_encoder():
             return None
+        # zp 2024-05-15 add "inference" param to control different setting between training and inference in encoder
+        if "src_offsets" in net_input and not active_uniform_pos_inference:
+            # logger.info("DEBUG generator set deactive_pos_unif = True for encoder")
+            return [model.encoder.forward_torchscript(net_input, deactive_pos_unif = True ) 
+                    for model in self.models]
+        
         return [model.encoder.forward_torchscript(net_input) for model in self.models]
+    
 
     @torch.jit.export
     def forward_decoder(
@@ -816,26 +836,31 @@ class EnsembleModel(nn.Module):
         encoder_outs: List[Dict[str, List[Tensor]]],
         incremental_states: List[Dict[str, Dict[str, Optional[Tensor]]]],
         temperature: float = 1.0,
+        tgt_offsets: Optional[Tensor] = None,
+        active_uniform_pos_inference: Optional[bool] = False,
     ):
         log_probs = []
         avg_attn: Optional[Tensor] = None
         encoder_out: Optional[Dict[str, List[Tensor]]] = None
+        deactive_pos_unif = not active_uniform_pos_inference 
         for i, model in enumerate(self.models):
             if self.has_encoder():
                 encoder_out = encoder_outs[i]
             # decode each model
             if self.has_incremental_states():
+                # logger.info(f"DEBUG generator deactive_pos_unif = {deactive_pos_unif} for decoder incremental")
                 decoder_out = model.decoder.forward(
                     tokens,
                     encoder_out=encoder_out,
                     incremental_state=incremental_states[i],
-                    inference=True,
+                    deactive_pos_unif = deactive_pos_unif,
+                    tgt_offsets = tgt_offsets,
                 )
             else:
                 if hasattr(model, "decoder"):
-                    decoder_out = model.decoder.forward(tokens, encoder_out=encoder_out, inference=True,)
+                    # logger.info(f"DEBUG generator set deactive_pos_unif = {deactive_pos_unif} for decoder")
+                    decoder_out = model.decoder.forward(tokens, encoder_out=encoder_out, deactive_pos_unif = deactive_pos_unif, tgt_offsets = tgt_offsets)
                 else:
-                    logger.info('DEBUG--------------=========')
                     decoder_out = model.forward(tokens)
 
             attn: Optional[Tensor] = None

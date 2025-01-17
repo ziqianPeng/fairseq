@@ -47,9 +47,6 @@ class TranslationMultiSimpleEpochConfig(TranslationConfig):
     )
 
 
-
-
-
 # @register_task("translation_multi_simple_epoch_fairseq")
 class TranslationMultiSimpleEpochTask(TranslationTask):
     """

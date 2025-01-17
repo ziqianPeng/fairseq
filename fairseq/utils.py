@@ -265,6 +265,36 @@ def make_positions(tensor, padding_idx: int, onnx_trace: bool = False, offset: i
     mask = tensor.ne(padding_idx).int()
     return ( (torch.cumsum(mask, dim=1).type_as(mask) + offset) * mask).long() + padding_idx 
 
+# ziqian add offset for uniform P(pos_i being obeserved) 2024-06-10
+def _get_offset(M, l):
+    """
+        M: predefined maximum length
+        l: input length
+        return : list of probability for position offset values from 0 to M-L+1
+    """
+    # l is input length from L_list
+    if 2*l >= M:
+    # logger.info(f"DEBUG 2*input length = 2*{l} >= M= {M}, M%l = {M%l}")
+        return 0
+    # M//l possible amount of offset values for each L
+    n_skip = torch.randint(0, M//l, (1,)).item()
+    # potential offset values for current input length
+    offset_values = torch.arange(0, M-l+1, l)
+    # logger.info(f"DEBUG original offset_values = {offset_values}")
+
+    offset_values[n_skip:] = offset_values[n_skip:] + M%l
+    # logger.info(f"DEBUG updated offset_values = {offset_values}")
+    # randomly choose one
+    offset = offset_values[ torch.randperm(len(offset_values))[0] ]
+    return offset
+
+def get_offset_list(M, L_list):
+    # randomly pick one value as offset for each L
+    offset_list = L_list.detach().clone()
+    offset_list = offset_list.cpu().apply_(lambda x: _get_offset(M, x) )#.to(device = L_list.device)
+    offset_list = torch.LongTensor(offset_list)
+    # return offset_list.view(len(offset_list), 1)  
+    return offset_list
 
 def strip_pad(tensor, pad):
     return tensor[tensor.ne(pad)]

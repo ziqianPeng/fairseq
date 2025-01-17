@@ -206,6 +206,7 @@ class GeneratorHubInterface(nn.Module):
 
         inference_step_args = inference_step_args or {}
         results = []
+        
         for batch in self._build_batches(tokenized_sentences, skip_invalid_size_inputs):
             batch = utils.apply_to_sample(lambda t: t.to(self.device), batch)
             translations = self.task.inference_step(
@@ -223,6 +224,7 @@ class GeneratorHubInterface(nn.Module):
                 return getattr(gen_args, name, getattr(self.cfg, name, default))
 
             for source_tokens, target_hypotheses in zip(tokenized_sentences, outputs):
+                # logger.info(f"DEBUG: source_tokens =  {source_tokens}")
                 src_str_with_unk = self.string(source_tokens)
                 logger.info("S\t{}".format(src_str_with_unk))
                 for hypo in target_hypotheses:

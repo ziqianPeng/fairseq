@@ -25,7 +25,11 @@ from fairseq.data import (
     TruncateDataset,
     data_utils,
     indexed_dataset,
+    LanguagePairPosUnifDataset,
+    PosUnifDataset,
 )
+from fairseq.data.multilingual.pos_unif_multi_dataset import PosUnifMultiDataset
+
 from fairseq.data.multilingual.multilingual_utils import (
     EncoderLangtok,
     LangTokSpec,
@@ -82,6 +86,15 @@ class MultilingualDatasetManager(object):
         self._has_sharded_data = False
         self._num_shards_dict = {}
         self._training_data_sizes = defaultdict(lambda: {})
+        # ziqian 2024-06-10 add unifPos
+        self.share_pos_offset_enc_dec = getattr(self.args, 'share_pos_offset_enc_dec', None)
+        self.active_uniform_pos = getattr(self.args, 'active_uniform_pos', None)
+        self.deactive_pos_unif = not args.active_uniform_pos_inference if hasattr(self.args, 'active_uniform_pos_inference') else None
+        self.pad_idx = args.pad
+
+        logger.info(f'DEBUG share_pos_offset_enc_dec = {self.share_pos_offset_enc_dec}, active_uniform_pos = {self.active_uniform_pos}')
+        logger.info(f'deactive_pos_unif = {self.deactive_pos_unif}')
+        
 
     @classmethod
     def setup_data_manager(cls, args, lang_pairs, langs, dicts, sampling_method):
@@ -379,7 +392,7 @@ class MultilingualDatasetManager(object):
 
         def load_dictionary_and_postproc(path):
             # ziqian 2023-11-14 extra symbol
-            # logger.info(f'DEBUG load...extra_symbols_to_end = {args.extra_symbols_to_end}')
+            
             d = load_dictionary(path)
             augment_dictionary(
                 dictionary=d,
@@ -507,8 +520,6 @@ class MultilingualDatasetManager(object):
         langtok = get_lang_tok(
             lang=tgt_lang, lang_tok_style=self.args.lang_tok_style, spec=spec
         )
-        # logger.info(f'DEBUG...langtok = {langtok}')
-        # logger.info(f'DEBUG...tgt_lang = {tgt_lang}')
         return self.get_langtok_index(langtok, self.get_target_dictionary(tgt_lang))
 
     @classmethod
@@ -692,7 +703,7 @@ class MultilingualDatasetManager(object):
                 f"[{split}] {src}-{tgt}: src length={len(src_dataset)}; tgt length={len(tgt_dataset)}"
             )
 
-        return LanguagePairDataset(
+        dataset = LanguagePairDataset(
             src_dataset,
             src_dataset.sizes,
             src_dict,
@@ -705,6 +716,19 @@ class MultilingualDatasetManager(object):
             src_lang_id=src_lang_id,
             tgt_lang_id=tgt_lang_id,
         )
+        
+        if self.active_uniform_pos:
+            dataset = PosUnifDataset(
+                split,
+                dataset,
+                share_pos_offset_enc_dec = self.share_pos_offset_enc_dec,
+                max_source_position = max_source_positions,
+                max_target_position = max_target_positions,
+                deactive_pos_unif = self.deactive_pos_unif,
+                pad_idx = self.pad_idx,
+                )
+
+        return dataset
 
     def src_dataset_tranform_func(self, src_lang, tgt_lang, dataset, spec=None):
         if self.args.lang_tok_replacing_bos_eos:
@@ -979,7 +1003,6 @@ class MultilingualDatasetManager(object):
                 assert src is not None or data_category == "mono_dae", (
                     f"error: src={src}, " f"tgt={tgt} for data_category={data_category}"
                 )
-                # logger.info(f"preparing param for {data_category}: {src} - {tgt}")
                 key = self.get_dataset_key(data_category, src, tgt)
                 data_path = self.get_split_data_path(
                     paths, epoch, shard_epoch, split_num_shards_dict[key]
@@ -1159,3 +1182,29 @@ class MultilingualDatasetManager(object):
             return self.load_sampled_multi_epoch_dataset(
                 split, training, epoch, combine, shard_epoch, **kwargs
             )
+    
+    # def load_dataset(
+    #     self, split, training, epoch=0, combine=False, shard_epoch=None, **kwargs
+    # ):
+    #     if self.args.virtual_epoch_size is None:
+    #         dataset = self.load_sampled_multi_dataset(
+    #             split, training, epoch, combine, shard_epoch, **kwargs
+    #         )
+    #     else:
+    #         dataset = self.load_sampled_multi_epoch_dataset(
+    #             split, training, epoch, combine, shard_epoch, **kwargs
+    #         )
+    #     if self.active_uniform_pos:
+    #         dataClass = PosUnifMultiDataset if isinstance(dataset, SampledMultiDataset) else PosUnifDataset
+
+    #         dataset = dataClass(
+    #             split,
+    #             dataset,
+    #             share_pos_offset_enc_dec = self.share_pos_offset_enc_dec,
+    #             max_source_position = self.args.max_source_positions,
+    #             max_target_position = self.args.max_target_positions,
+    #             deactive_pos_unif = self.deactive_pos_unif,
+    #             pad_idx = self.pad_idx,
+    #             )
+
+    #     return dataset

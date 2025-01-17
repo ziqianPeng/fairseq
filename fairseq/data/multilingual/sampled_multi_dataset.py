@@ -120,7 +120,7 @@ class SampledMultiDataset(FairseqDataset):
         self._reset_cached_properties()
         self.setup_sampling(sampling_ratios, virtual_size)
         self.set_epoch(epoch)
-
+        
     def _clean_if_not_none(self, var_list):
         for v in var_list:
             if v is not None:
@@ -328,6 +328,18 @@ class SampledMultiDataset(FairseqDataset):
                 batch["tgt_lang_id"] = straight_order(
                     [b["tgt_lang_id"] for b in batches]
                 )
+            # ziqian 2024-06-10
+            if "src_offsets" in batches[0]['net_input']:
+                batch["src_offsets"] = None if batches[0]['net_input']['src_offsets'] is None else straight_order(
+                    [b["src_offsets"] for b in batches]
+                    )
+                # logger.info(f'DEBUG final src_offsets in batch = {batch["src_offsets"]}')
+                
+            if "tgt_offsets" in batches[0]['net_input']:
+                batch["tgt_offsets"] = None if batches[0]['net_input']['tgt_offsets'] is None else straight_order(
+                    [b["tgt_offsets"] for b in batches]
+                    )
+            # logger.info(f"DEBUG multi dataset batch = {batch}")
         return batch
 
     @property

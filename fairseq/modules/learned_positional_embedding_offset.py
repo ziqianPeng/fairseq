@@ -25,12 +25,13 @@ class LearnedPositionalEmbeddingOffset(nn.Embedding):
     # ziqian add position idx offset, positions begin at offset + padding_idx, 2024-03-27
     def __init__(self, num_embeddings: int, embedding_dim: int, padding_idx: int, offset: int = 0):
         super().__init__(num_embeddings, embedding_dim, padding_idx)
+        self.offset = offset if offset is not None else 0
         self.onnx_trace = False
         if self.padding_idx is not None:
-            self.max_positions = self.num_embeddings - self.padding_idx - 1 - offset
+            self.max_positions = self.num_embeddings - self.padding_idx - 1 - self.offset
         else:
-            self.max_positions = self.num_embeddings - offset
-        self.offset = offset
+            self.max_positions = self.num_embeddings - self.offset
+        
         logger.info(f"offset = {offset}, embed_position.max_positions() = {self.max_positions}")
 
     def forward(
@@ -38,6 +39,7 @@ class LearnedPositionalEmbeddingOffset(nn.Embedding):
         input: Tensor,
         incremental_state: Optional[Dict[str, Dict[str, Optional[Tensor]]]] = None,
         positions: Optional[Tensor] = None,
+        inference: Optional[bool] = None,
     ):
         """Input is expected to be of size [bsz x seqlen]."""
         assert (positions is None) or (
@@ -51,10 +53,19 @@ class LearnedPositionalEmbeddingOffset(nn.Embedding):
                 positions = torch.zeros(
                     (1, 1), device=input.device, dtype=input.dtype
                 ).fill_(int(self.padding_idx + input.size(1) + self.offset ))
+                # if input.size(1) < 30:
+                #     logger.info(f"incremental... input {input}")
+                #     logger.info(f"positions[:,:3] = {positions[:,:3]}")
+
+
             else:
                 positions = utils.make_positions(
                     input, self.padding_idx, onnx_trace=self.onnx_trace, offset= self.offset
                 )
+                # logger.info(f"input {input}")
+                # logger.info(f"positions[:,:3] = {positions[:,:3]}")
+
+
 
         return F.embedding(
             positions,

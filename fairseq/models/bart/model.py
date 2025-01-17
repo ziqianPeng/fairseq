@@ -39,7 +39,6 @@ class BARTModel(TransformerModel):
     def __init__(self, args, encoder, decoder):
         # here args is TransformerConfig
         super().__init__(args, encoder, decoder)
-        logger.info(f"position offset = {self.args.offset}")
 
         # We follow BERT's random weight initialization
         self.apply(init_bert_params)
@@ -67,9 +66,6 @@ class BARTModel(TransformerModel):
             action="store_true",
             help="Apply spectral normalization on the classification head",
         )
-        # # position offset
-        # parser.add_argument('--offset', type = int, default=0, 
-        #     help="position index offset of input sequence, default is 0, so the input position begins at 0 + padding_idx")
 
     @property
     def supported_targets(self):
@@ -139,7 +135,6 @@ class BARTModel(TransformerModel):
             sample_break_mode=sample_break_mode,
             **kwargs,
         )
-        logger.info(f"ZP DEBUG models : {x['models'][0]}")
         return BARTHubInterface(x["args"], x["task"], x["models"][0])
 
     def register_classification_head(
@@ -288,7 +283,6 @@ class BARTModel(TransformerModel):
         # ZP 2024-03-08 extend positional embedding size as max source position or max target position
         logger.info( f"max_source_position cfg = {self.cfg.max_source_positions}, max_target_position {self.cfg.max_target_positions}")
         logger.info( f"position embedding size = encoder : {self.encoder.embed_positions.weight.shape}, decoder : {self.decoder.embed_positions.weight.shape}")
-        # logger.info( f"ZP max_source_position args= {self.args.max_source_positions}, max_target_position {self.args.max_target_positions}")
 
         # ZP 2024-03-27 
         loaded_num_pos, loaded_dim_pos = state_dict['encoder.embed_positions.weight'].shape
@@ -311,26 +305,11 @@ class BARTModel(TransformerModel):
             extend_embed_pos_dec[:loaded_num_pos] = state_dict['decoder.embed_positions.weight']
             state_dict['decoder.embed_positions.weight'] = extend_embed_pos_dec
 
-            # new_pos_embed_to_add = torch.zeros(self.cfg.max_source_positions - loaded_num_pos, loaded_dim_pos)
-            # # mean=0, std=0.02 in function init_bert_params in fairseq.modules.transformer_sentence_encoder, 
-            # normal_(new_pos_embed_to_add)
-            # new_pos_embed_to_add = new_pos_embed_to_add.to(
-            #     dtype=state_dict["encoder.embed_positions.weight"].dtype,
-            #     )
-            # state_dict["encoder.embed_positions.weight"] = torch.cat(
-            #     [
-            #         state_dict["encoder.embed_positions.weight"],
-            #         new_pos_embed_to_add,
-            #     ]
-            # )
-
-
 
     def set_beam_size(self, beam):
         """Set beam size for efficient beamable enc-dec attention."""
         beamable = False
         for layer in self.decoder.layers:
-            # logger.info(f'DEBUG...bart...hasattr(layer.encoder_attn, "set_beam_size")={hasattr(layer.encoder_attn, "set_beam_size")}')
             if layer.encoder_attn is not None:
                 if hasattr(layer.encoder_attn, "set_beam_size"):
                     layer.encoder_attn.set_beam_size(beam)

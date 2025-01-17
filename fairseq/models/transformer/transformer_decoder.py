@@ -27,6 +27,10 @@ from fairseq.modules import (
 from fairseq.modules.checkpoint_activations import checkpoint_wrapper
 from fairseq.modules.quant_noise import quant_noise as apply_quant_noise_
 
+from fairseq.modules.learned_positional_embedding_uniform import LearnedPositionalEmbeddingUnif
+# zp to remove 
+import logging
+logger = logging.getLogger(__name__)
 
 # rewrite name for backward compatibility in `make_generation_fast_`
 def module_name_fordropout(module_name: str) -> str:
@@ -102,6 +106,7 @@ class TransformerDecoderBase(FairseqIncrementalDecoder):
                 self.padding_idx,
                 learned=cfg.decoder.learned_pos,
                 offset=cfg.offset,
+                active_uniform_pos= getattr(cfg, 'active_uniform_pos', None),
             )
             if not cfg.no_token_positional_embeddings
             else None
@@ -196,7 +201,9 @@ class TransformerDecoderBase(FairseqIncrementalDecoder):
         alignment_heads: Optional[int] = None,
         src_lengths: Optional[Any] = None,
         return_all_hiddens: bool = False,
-        inference: Optional[bool] = False,
+        inference: Optional[bool] = None,
+        deactive_pos_unif: Optional[bool] = None,
+        tgt_offsets: Optional[Tensor] = None,
     ):
         """
         Args:
@@ -216,7 +223,6 @@ class TransformerDecoderBase(FairseqIncrementalDecoder):
                 - the decoder's output of shape `(batch, tgt_len, vocab)`
                 - a dictionary with any model-specific outputs
         """
-
         x, extra = self.extract_features(
             prev_output_tokens,
             encoder_out=encoder_out,
@@ -225,6 +231,8 @@ class TransformerDecoderBase(FairseqIncrementalDecoder):
             alignment_layer=alignment_layer,
             alignment_heads=alignment_heads,
             inference=inference,
+            deactive_pos_unif = deactive_pos_unif, 
+            tgt_offsets= tgt_offsets,
         )
 
         if not features_only:
@@ -239,7 +247,9 @@ class TransformerDecoderBase(FairseqIncrementalDecoder):
         full_context_alignment: bool = False,
         alignment_layer: Optional[int] = None,
         alignment_heads: Optional[int] = None,
-        inference: Optional[bool] = False,
+        inference: Optional[bool] = None,
+        deactive_pos_unif: Optional[bool] = None, 
+        tgt_offsets: Optional[Tensor] = None,
     ):
         return self.extract_features_scriptable(
             prev_output_tokens,
@@ -248,7 +258,9 @@ class TransformerDecoderBase(FairseqIncrementalDecoder):
             full_context_alignment,
             alignment_layer,
             alignment_heads,
-            inference,
+            inference = inference,
+            deactive_pos_unif = deactive_pos_unif, 
+            tgt_offsets = tgt_offsets,
         )
 
     """
@@ -265,7 +277,9 @@ class TransformerDecoderBase(FairseqIncrementalDecoder):
         full_context_alignment: bool = False,
         alignment_layer: Optional[int] = None,
         alignment_heads: Optional[int] = None,
-        inference: Optional[bool] = False,
+        inference: Optional[bool] = None,
+        deactive_pos_unif : Optional[bool] = None,
+        tgt_offsets: Optional[Tensor] = None,
     ):
         """
         Similar to *forward* but only return features.
@@ -300,9 +314,15 @@ class TransformerDecoderBase(FairseqIncrementalDecoder):
         # embed positions
         positions = None
         if self.embed_positions is not None:
-            positions = self.embed_positions(
-                prev_output_tokens, incremental_state=incremental_state
+            # ZP todo : check implemetation for context mask to change the default value of inference as None (like in TransformerEncoder)
+            if isinstance(self.embed_positions, LearnedPositionalEmbeddingUnif):
+                positions = self.embed_positions(
+                prev_output_tokens, incremental_state=incremental_state, deactive_pos_unif = deactive_pos_unif, input_offsets = tgt_offsets,
             )
+            else:
+                positions = self.embed_positions(
+                    prev_output_tokens, incremental_state=incremental_state,
+                )
 
         if incremental_state is not None:
             prev_output_tokens = prev_output_tokens[:, -1:]

@@ -6,7 +6,7 @@ import numpy as np
 import torch
 from fairseq.data import FairseqDataset, data_utils
 from fairseq.data.language_pair_dataset import LanguagePairDataset
-
+logger = logging.getLogger(__name__)
 
 # def doc_size_in_sents_loop(dataset, sep_idx = 4):
 #     """

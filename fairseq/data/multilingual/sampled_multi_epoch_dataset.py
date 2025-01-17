@@ -80,6 +80,7 @@ class SampledMultiEpochDataset(SampledMultiDataset):
             shuffle=shuffle,
         )
 
+
     def _setup(self, epoch):
         self.virtual_epoch_size = (
             self.virtual_epoch_size

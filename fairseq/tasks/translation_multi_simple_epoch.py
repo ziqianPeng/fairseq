@@ -30,6 +30,7 @@ from fairseq.logging import metrics
 import numpy as np
 from fairseq import utils
 # from fairseq.utils import safe_hasattr
+from fairseq.optim.amp_optimizer import AMPOptimizer
 
 EVAL_BLEU_ORDER = 4
 
@@ -83,11 +84,17 @@ class TranslationMultiSimpleEpochTask(LegacyFairseqTask):
         parser.add_argument('--extra-symbols-to-end', default=None, 
             help="list of extra_special_symbols to append in the dictionary, separate by single space")
 
+        # Ziqian 2024-03-27 position offset
+        parser.add_argument('--offset', type = int, default=0, 
+            help="position index offset of input sequence, default is 0, so the input position begins at 0 + padding_idx"
+            )
+        
+        # # Ziqian 2024-05-15 uniform position
+        # parser.add_argument('--active-uniform-pos', action='store_true', default=False, 
+        #     help="activate or not uniform position indices using offset during training"
+        #     )
         SamplingMethod.add_arguments(parser)
         MultilingualDatasetManager.add_args(parser)
-        # # Ziqian 2024-03-27 position offset
-        parser.add_argument('--offset', type = int, default=0, 
-            help="position index offset of input sequence, default is 0, so the input position begins at 0 + padding_idx")
 
         # options for reporting BLEU during validation
         parser.add_argument('--eval-bleu', action='store_true',
@@ -124,6 +131,7 @@ class TranslationMultiSimpleEpochTask(LegacyFairseqTask):
         self.training = training
         if training:
             self.lang_pairs = args.lang_pairs
+            # self.active_uniform_pos = args.active_uniform_pos
         else:
             self.lang_pairs = ["{}-{}".format(args.source_lang, args.target_lang)]
         # eval_lang_pairs for multilingual translation is usually all of the
@@ -145,7 +153,10 @@ class TranslationMultiSimpleEpochTask(LegacyFairseqTask):
             args, self.lang_pairs, langs, dicts, self.sampling_method
         )
         logger.info(f'position offset = {args.offset}')
+        # logger.info(f'active_uniform_pos = {args.active_uniform_pos}')
+
         self.offset = args.offset
+        # self.active_uniform_pos = args.active_uniform_pos
 
     def check_dicts(self, dicts, source_langs, target_langs):
         if self.args.source_dict is not None or self.args.target_dict is not None:
@@ -169,7 +180,6 @@ class TranslationMultiSimpleEpochTask(LegacyFairseqTask):
         langs, dicts, training = MultilingualDatasetManager.prepare(
             cls.load_dictionary, args, **kwargs
         )
-        # logger.info(f'DEBUG...training..setup_task...={training}')
         return cls(args, langs, dicts, training)
 
     def has_sharded_data(self, split):
@@ -290,6 +300,10 @@ class TranslationMultiSimpleEpochTask(LegacyFairseqTask):
         if self.args.offset != getattr(args, 'offset', None) :
             logger.info(f"WARNING: changing model's position offset from {getattr(args, 'offset', None)} to {self.args.offset}")
             setattr(args, 'offset', self.get_offset() )
+
+        # if self.args.active_uniform_pos != getattr(args, 'active_uniform_pos', None):
+        #     logger.info(f"TEST: changing model's active_uniform_pos param from {getattr(args, 'active_uniform_pos', None)} to {self.args.active_uniform_pos}")
+        #     setattr(args, 'active_uniform_pos', self.args.active_uniform_pos )
 
         model = super().build_model(args, from_checkpoint)
                 

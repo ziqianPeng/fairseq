@@ -298,6 +298,7 @@ class LanguagePairDataset(FairseqDataset):
             self.buckets = None
         self.pad_to_multiple = pad_to_multiple
 
+
     def get_batch_shapes(self):
         return self.buckets
 

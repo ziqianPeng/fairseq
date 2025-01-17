@@ -12,6 +12,7 @@ from fairseq.logging import metrics
 from fairseq.criterions import FairseqCriterion, register_criterion
 from fairseq.dataclass import FairseqDataclass
 from omegaconf import II
+from typing import List, Optional
 
 
 @dataclass
@@ -69,7 +70,7 @@ class LabelSmoothedCrossEntropyCriterion(FairseqCriterion):
         self.ignore_prefix_size = ignore_prefix_size
         self.report_accuracy = report_accuracy
 
-    def forward(self, model, sample, reduce=True):
+    def forward(self, model, sample, reduce=True ):
         """Compute the loss for the given sample.
 
         Returns a tuple with three elements:
@@ -77,7 +78,13 @@ class LabelSmoothedCrossEntropyCriterion(FairseqCriterion):
         2) the sample size, which is used as the denominator for the gradient
         3) logging outputs to display while training
         """
+        # zp todo put this as fairseq version, after fixing offset during preprocessing and put into sample["net_input"]
+        # if inference is not None:
+        #     net_output = model(**sample["net_input"], inference = inference)
+        # else:  
+        #     net_output = model(**sample["net_input"])
         net_output = model(**sample["net_input"])
+        
         loss, nll_loss = self.compute_loss(model, net_output, sample, reduce=reduce)
         sample_size = (
             sample["target"].size(0) if self.sentence_avg else sample["ntokens"]

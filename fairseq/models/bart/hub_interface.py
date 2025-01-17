@@ -31,7 +31,7 @@ class BARTHubInterface(GeneratorHubInterface):
         self.model = self.models[0]
 
     def encode(
-        self, sentence: str, *addl_sentences, no_separator=True
+        self, sentence: str, *addl_sentences, add_bos = False, no_separator=True
     ) -> torch.LongTensor:
         """
         BPE-encode a sentence (or multiple sentences).
@@ -52,10 +52,11 @@ class BARTHubInterface(GeneratorHubInterface):
             >>> bart.encode('world').tolist()
             [0, 8331, 2]
         """
+        # ziqian 2024-07-01 mbart don't use bos
         tokens = self.bpe.encode(sentence)
         if len(tokens.split(" ")) > min(self.max_positions) - 2:
             tokens = " ".join(tokens.split(" ")[: min(self.max_positions) - 2])
-        bpe_sentence = "<s> " + tokens + " </s>"
+        bpe_sentence = "<s> " + tokens + " </s>" if add_bos else tokens + " </s>"
         for s in addl_sentences:
             bpe_sentence += " </s>" if not no_separator else ""
             bpe_sentence += " " + self.bpe.encode(s) + " </s>"
@@ -99,11 +100,16 @@ class BARTHubInterface(GeneratorHubInterface):
         if "prefix_tokens" in inference_step_args:
             raise NotImplementedError("prefix generation not implemented for BART")
         res = []
+        
+        # self._build_batches called the function _build_batches in super class, 
+        # and self._build_batches will be called again in super().generate(...), 
+        # which will add twice the src_lang_tok, so it would be better to take batch["net_input"]["src_tokens"][:, 1:]
+        inference_step_args["prefix_tokens"] = None
         for batch in self._build_batches(tokenized_sentences, skip_invalid_size_inputs):
-            src_tokens = batch["net_input"]["src_tokens"]
-            inference_step_args["prefix_tokens"] = src_tokens.new_full(
-                (src_tokens.size(0), 1), fill_value=self.task.source_dictionary.bos()
-            ).to(device=self.device)
+            src_tokens = batch["net_input"]["src_tokens"][:, 1:]
+            # inference_step_args["prefix_tokens"] = src_tokens.new_full(
+            #     (src_tokens.size(0), 1), fill_value=self.task.source_dictionary.bos()
+            # ).to(device=self.device)
             results = super().generate(
                 src_tokens,
                 *args,

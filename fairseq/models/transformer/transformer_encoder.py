@@ -24,7 +24,12 @@ from fairseq.modules import (
 )
 from fairseq.modules.checkpoint_activations import checkpoint_wrapper
 from fairseq.modules.quant_noise import quant_noise as apply_quant_noise_
+from fairseq.modules.learned_positional_embedding_uniform import LearnedPositionalEmbeddingUnif
 
+
+# zp to remove 
+import logging
+logger = logging.getLogger(__name__)
 
 # rewrite name for backward compatibility in `make_generation_fast_`
 def module_name_fordropout(module_name: str) -> str:
@@ -71,6 +76,7 @@ class TransformerEncoderBase(FairseqEncoder):
                 self.padding_idx,
                 learned=cfg.encoder.learned_pos,
                 offset=cfg.offset,
+                active_uniform_pos= getattr(cfg, 'active_uniform_pos', None), 
             )
             if not cfg.no_token_positional_embeddings
             else None
@@ -118,14 +124,20 @@ class TransformerEncoderBase(FairseqEncoder):
         return layer
 
     def forward_embedding(
-        self, src_tokens, token_embedding: Optional[torch.Tensor] = None
+        self, src_tokens, 
+        token_embedding: Optional[torch.Tensor] = None,
+        deactive_pos_unif: Optional[bool] = None,
+        src_offsets : Optional[torch.Tensor] = None,
     ):
         # embed tokens and positions
         if token_embedding is None:
             token_embedding = self.embed_tokens(src_tokens)
         x = embed = self.embed_scale * token_embedding
         if self.embed_positions is not None:
-            x = embed + self.embed_positions(src_tokens)
+            if isinstance(self.embed_positions, LearnedPositionalEmbeddingUnif):
+                x = embed + self.embed_positions(src_tokens, deactive_pos_unif = deactive_pos_unif, input_offsets = src_offsets)
+            else:
+                x = embed + self.embed_positions(src_tokens)
         if self.layernorm_embedding is not None:
             x = self.layernorm_embedding(x)
         x = self.dropout_module(x)
@@ -139,6 +151,8 @@ class TransformerEncoderBase(FairseqEncoder):
         src_lengths: Optional[torch.Tensor] = None,
         return_all_hiddens: bool = False,
         token_embeddings: Optional[torch.Tensor] = None,
+        deactive_pos_unif: Optional[bool] = None,
+        src_offsets: Optional[torch.Tensor] = None,
     ):
         """
         Args:
@@ -164,7 +178,12 @@ class TransformerEncoderBase(FairseqEncoder):
                   Only populated if *return_all_hiddens* is True.
         """
         return self.forward_scriptable(
-            src_tokens, src_lengths, return_all_hiddens, token_embeddings
+            src_tokens,
+            src_lengths = src_lengths, 
+            return_all_hiddens = return_all_hiddens, 
+            token_embeddings = token_embeddings, 
+            deactive_pos_unif = deactive_pos_unif, 
+            src_offsets = src_offsets,
         )
 
     # TorchScript doesn't support super() method so that the scriptable Subclass
@@ -177,6 +196,8 @@ class TransformerEncoderBase(FairseqEncoder):
         src_lengths: Optional[torch.Tensor] = None,
         return_all_hiddens: bool = False,
         token_embeddings: Optional[torch.Tensor] = None,
+        deactive_pos_unif: Optional[bool] = None,
+        src_offsets: Optional[torch.Tensor] = None,
     ):
         """
         Args:
@@ -210,7 +231,7 @@ class TransformerEncoderBase(FairseqEncoder):
         if torch.jit.is_scripting():
             has_pads = torch.tensor(1) if has_pads else torch.tensor(0)
 
-        x, encoder_embedding = self.forward_embedding(src_tokens, token_embeddings)
+        x, encoder_embedding = self.forward_embedding(src_tokens, token_embeddings, deactive_pos_unif = deactive_pos_unif, src_offsets = src_offsets )
 
         # account for padding while computing the representation
         x = x * (
@@ -265,6 +286,31 @@ class TransformerEncoderBase(FairseqEncoder):
             "src_tokens": [],
             "src_lengths": [src_lengths],
         }
+    
+    def forward_torchscript(self, net_input: Dict[str, Tensor], deactive_pos_unif: Optional[bool] = None ):
+        """A TorchScript-compatible version of forward.
+        override to add the boolean argument deactive_pos_unif, indicating whether using param values for inference
+
+        Encoders which use additional arguments may want to override
+        this method for TorchScript compatibility.
+        """
+        if torch.jit.is_scripting():
+            return self.forward(
+                src_tokens=net_input["src_tokens"],
+                src_lengths=net_input["src_lengths"],
+                deactive_pos_unif = deactive_pos_unif,
+                src_offsets = net_input.get("src_offsets ", None),
+            )
+        else:
+            return self.forward_non_torchscript(net_input, deactive_pos_unif = deactive_pos_unif)
+        
+    @torch.jit.unused
+    def forward_non_torchscript(self, net_input: Dict[str, Tensor], deactive_pos_unif: Optional[bool] = None ):
+        # override to add the boolean argument deactive_pos_unif, indicating whether using param values for deactive_pos_unif
+        encoder_input = {
+            k: v for k, v in net_input.items() if k not in [ "prev_output_tokens", 'tgt_offsets']
+        }
+        return self.forward(**encoder_input, deactive_pos_unif = deactive_pos_unif)
 
     @torch.jit.export
     def reorder_encoder_out(self, encoder_out: Dict[str, List[Tensor]], new_order):

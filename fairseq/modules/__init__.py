@@ -27,6 +27,7 @@ from .layer_drop import LayerDropModuleList
 from .layer_norm import Fp32LayerNorm, LayerNorm
 from .learned_positional_embedding import LearnedPositionalEmbedding
 from .learned_positional_embedding_offset import LearnedPositionalEmbeddingOffset #ziqian
+from .learned_positional_embedding_uniform import LearnedPositionalEmbeddingUnif #ziqian
 from .lightweight_convolution import LightweightConv, LightweightConv1dTBC
 from .linearized_convolution import LinearizedConvolution
 from .location_attention import LocationAttention

@@ -353,8 +353,6 @@ class TranslationMaskTask(TranslationTask):
 
     def valid_step(self, sample, model, criterion):
         # TODO ziqian may need to change this one for inference
-        # print('TEST.translation_mask | valid_step.sample', sample['net_input']['src_tokens'][0])
-        # print('TEST.translation_mask | valid_step.sample', sample.get('id', None))
         loss, sample_size, logging_output = super().valid_step(sample, model, criterion)
         if self.cfg.eval_bleu:
             bleu = self._inference_with_bleu(self.sequence_generator, sample, model)
@@ -369,7 +367,6 @@ class TranslationMaskTask(TranslationTask):
         return loss, sample_size, logging_output
 
     #  def reduce_metrics(self, logging_outputs, criterion)  from TranslationTask
-    # TODO ziqian check if this is correct for evaluation
 
     def _inference_with_bleu(self, generator, sample, model):
         import sacrebleu

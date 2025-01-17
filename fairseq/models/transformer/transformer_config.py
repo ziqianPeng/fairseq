@@ -209,9 +209,13 @@ class TransformerConfig(FairseqDataclass):
             "--offload-activations are passed."
         },
     )
-    offset: Optional[int] = field(
-        default=0, metadata={"help": "position index offset of input sequence, default is 0, so the input position begins at 0 + padding_idx"}
-    )
+    # offset: Optional[int] = field(
+    #     default=0, metadata={"help": "position index offset of input sequence, default is 0, so the input position begins at 0 + padding_idx"}
+    # )
+
+    # active_uniform_pos: Optional[bool] = field(
+    #     default=False, metadata={"help": "activate or not uniform position indices using offset during training"}
+    # )
     # DEPRECATED field, but some old checkpoints might have it
     char_inputs: bool = field(
         default=False, metadata={"help": "if set, model takes character ids as input"}
