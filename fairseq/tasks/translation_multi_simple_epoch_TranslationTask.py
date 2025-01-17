@@ -1,3 +1,6 @@
+# adapted from fairseq/tasks/translation_multi_simple_epoch_fairseq.py and fairseq/tasks/translation.py
+# Modification Copyright 2024 Ziqian Peng
+#
 # Copyright (c) Facebook, Inc. and its affiliates.
 #
 # This source code is licensed under the MIT license found in the

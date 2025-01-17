@@ -57,25 +57,15 @@ def augment_dictionary(
     nb = 0
     for spec in langtoks_specs:
         for language in language_list:
-            # logger.info(f'DEBUG...nb={nb}, len(dic) = {len(dictionary)}')
             dictionary.add_symbol(
                 get_lang_tok(lang=language, lang_tok_style=lang_tok_style, spec=spec)
             )
             nb+=1
-            # logger.info(f'DEBUG...get{len(dictionary)-1}={dictionary[len(dictionary)-1]}')
-            # logger.info(f'DEBUG...{spec}...{language}...{get_lang_tok(lang=language, lang_tok_style=lang_tok_style, spec=spec)}')
 
     if lang_tok_style == LangTokStyle.mbart.value or (
         extra_data is not None and LangTokSpec.mono_dae.value in extra_data
     ):
         dictionary.add_symbol("<mask>")
-    # if extra_symbols_to_end:
-    #     logger.info(f'DEBUG len(dict) = {len(dictionary)}')
-    #     # if "<mask>" not in dictionary:
-    #     #     logger.info(f'Adding symbol <mask> in the dictionary at position {len(dictionary)}')
-    #     #     dictionary.add_symbol("<mask>")
-    #     # for s in extra_symbols_to_end:
-    #     #     logger.info(f'Adding extra special symbol {s} at position {len(dictionary)}')
-    #     #     dictionary.add_symbol(s)
+
 
 

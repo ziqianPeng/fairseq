@@ -118,10 +118,8 @@ class TranslationMultiSimpleEpochTask(LegacyFairseqTask):
         self.langs = langs
         self.dicts = dicts
         self.training = training
-        # logger.info(f'DEBUG...training..init...={training}')
         if training:
             self.lang_pairs = args.lang_pairs
-            # logger.info(f'DEBUG...lang_pairs..init...={args.lang_pairs}')
         else:
             self.lang_pairs = ["{}-{}".format(args.source_lang, args.target_lang)]
         # eval_lang_pairs for multilingual translation is usually all of the
@@ -165,7 +163,6 @@ class TranslationMultiSimpleEpochTask(LegacyFairseqTask):
         langs, dicts, training = MultilingualDatasetManager.prepare(
             cls.load_dictionary, args, **kwargs
         )
-        # logger.info(f'DEBUG...training..setup_task...={training}')
         return cls(args, langs, dicts, training)
 
     def has_sharded_data(self, split):
@@ -250,7 +247,6 @@ class TranslationMultiSimpleEpochTask(LegacyFairseqTask):
     ):
         if not getattr(args, "keep_inference_langtok", False):
             _, tgt_langtok_spec = self.args.langtoks["main"]
-            # logger.info(f'DEBUG...{self.args.target_lang}...{self.target_langs}')
             if tgt_langtok_spec:
                 # 2023-11-20 ziqian: enable inference at validation step, when source_lang or target_lang is not given in training arguments
                 target_lang = self.target_langs[0] if self.args.target_lang is None else self.args.target_lang 
@@ -284,14 +280,9 @@ class TranslationMultiSimpleEpochTask(LegacyFairseqTask):
             )
         return model
 
-    # def valid_step(self, sample, model, criterion):
-    #     loss, sample_size, logging_output = super().valid_step(sample, model, criterion)
-    #     return loss, sample_size, logging_output
-
     def valid_step(self, sample, model, criterion):
         # adapt from TranslationTask
         loss, sample_size, logging_output = super().valid_step(sample, model, criterion)
-        # logger.info(f'DEBUG....vali_step...{loss}...{sample_size}')
         if self.args.eval_bleu:
             bleu = self._inference_with_bleu(self.sequence_generator, sample, model)
             logging_output["_bleu_sys_len"] = bleu.sys_len

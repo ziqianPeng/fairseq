@@ -378,8 +378,6 @@ class MultilingualDatasetManager(object):
         )
 
         def load_dictionary_and_postproc(path):
-            # ziqian 2023-11-14 extra symbol
-            # logger.info(f'DEBUG load...extra_symbols_to_end = {args.extra_symbols_to_end}')
             d = load_dictionary(path)
             augment_dictionary(
                 dictionary=d,
@@ -507,8 +505,6 @@ class MultilingualDatasetManager(object):
         langtok = get_lang_tok(
             lang=tgt_lang, lang_tok_style=self.args.lang_tok_style, spec=spec
         )
-        # logger.info(f'DEBUG...langtok = {langtok}')
-        # logger.info(f'DEBUG...tgt_lang = {tgt_lang}')
         return self.get_langtok_index(langtok, self.get_target_dictionary(tgt_lang))
 
     @classmethod

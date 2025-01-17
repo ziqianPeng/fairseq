@@ -585,14 +585,10 @@ class MultiheadAttention(FairseqIncrementalDecoder):
                 assert value is None
                 k = v = None
             else:
-                # if inference:
-                    # logger.info(f'DEBUG...inference={inference}...beam_size={self.beam_size}...bsz={bsz}...key.shape={key.shape}')
                 if self.beam_size > 1 and bsz == key.size(1) and inference:
                     # 2023-11-20 ziqian: if self.training (which is False for validation step), we do not use beam search
                     # if incremental_state is not None we are doing inference
                     # key is [T, bsz*beam_size, C], reduce to [T, bsz, C]
-                    logger.info(f'DEBUG...bsz={bsz}...key.shape = {key.shape}...query.shape = {query.shape} self.training = {self.training}...inference={inference}...beam_size={self.beam_size}')
-                    logger.info(f'DEBUG...incremental_state is not None: {incremental_state is not None}')
                     # raise RuntimeError(f"KEY.VIEW with beam_size=  {self.beam_size}")
                     key = key.view(key.size(0), -1, self.beam_size, key.size(2))[
                         :, :, 0, :
